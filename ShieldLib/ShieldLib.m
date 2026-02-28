@@ -108,7 +108,15 @@ static NSString *ShieldGetDeviceID(void) {
     NSString *saved = KeychainLoad(KEY_DEVICE_ID);
     if (saved) return saved;
 
-    NSString *deviceID = [UIDevice currentDevice].identifierForVendor.UUIDString;
+    // UIDevice phải gọi từ main thread
+    __block NSString *deviceID = nil;
+    if ([NSThread isMainThread]) {
+        deviceID = [UIDevice currentDevice].identifierForVendor.UUIDString;
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), ^{
+            deviceID = [UIDevice currentDevice].identifierForVendor.UUIDString;
+        });
+    }
     if (!deviceID) {
         deviceID = [NSUUID UUID].UUIDString;
     }
@@ -339,17 +347,21 @@ static ShieldLockStatus ShieldCheckTimeLock(void) {
 __attribute__((constructor))
 static void shield_dylib_init(void) {
     NSLog(@"%@ ═══ ShieldLib loaded (ObjC) ═══", SHIELD_LOG_PREFIX);
-    NSLog(@"%@ Module: ShieldLib v2.0", SHIELD_LOG_PREFIX);
+    NSLog(@"%@ Module: ShieldLib v2.1", SHIELD_LOG_PREFIX);
 
     // Đợi app launch xong rồi mới check license
     [[NSNotificationCenter defaultCenter]
         addObserverForName:UIApplicationDidFinishLaunchingNotification
         object:nil
-        queue:[NSOperationQueue mainQueue]
+        queue:nil
         usingBlock:^(NSNotification *note) {
-            NSLog(@"%@ App launched — checking license...", SHIELD_LOG_PREFIX);
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
-                           dispatch_get_main_queue(), ^{
+            NSLog(@"%@ App launched — scheduling license check...", SHIELD_LOG_PREFIX);
+
+            // ★ Chạy license check trên BACKGROUND thread
+            // Không block main thread → WDA không bị chớp
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
+                           dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+                NSLog(@"%@ Running license check (background)...", SHIELD_LOG_PREFIX);
                 BOOL ok = [[ShieldLicenseManager shared] checkLicense];
                 NSLog(@"%@ License result: %@", SHIELD_LOG_PREFIX, ok ? @"OK" : @"BLOCKED");
             });
