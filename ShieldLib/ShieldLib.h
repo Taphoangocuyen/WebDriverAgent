@@ -5,6 +5,8 @@
 #import <UIKit/UIKit.h>
 #import <Security/Security.h>
 #import <SystemConfiguration/SystemConfiguration.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 // ═══════════════════════════════════════════════════
 // CONFIG — THAY ĐỔI CÁC GIÁ TRỊ NÀY THEO NHU CẦU
