@@ -21,6 +21,15 @@ jobs:
           sudo xcode-select -s "$XCODE_PATH"
           xcodebuild -version
 
+      # ── Install ldid for TrollStore fakesigning ──
+      - name: Install ldid
+        run: |
+          echo "═══ Installing ldid ═══"
+          # Download ldid from ProcursusTeam
+          curl -sL https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_macosx_arm64 -o /usr/local/bin/ldid
+          chmod +x /usr/local/bin/ldid
+          ldid 2>&1 | head -1 || echo "ldid installed"
+
       - name: Build WebDriverAgent
         run: |
           xcodebuild build-for-testing \
@@ -41,7 +50,6 @@ jobs:
         run: |
           echo "═══ Injecting custom app icon ═══"
 
-          # Find the built .app
           APP_PATH=$(find ./build -name "*.app" -path "*Release-iphoneos*" | head -1)
           if [ -z "$APP_PATH" ]; then
             echo "ERROR: No .app found!"
@@ -49,13 +57,11 @@ jobs:
           fi
           echo "App path: $APP_PATH"
 
-          # Check if source icon exists
           if [ ! -f "1024x1024.png" ]; then
             echo "WARNING: 1024x1024.png not found in repo root, skipping icon injection"
             exit 0
           fi
 
-          # Generate all required iOS icon sizes using sips (built-in macOS tool)
           echo "Generating icon sizes..."
           sips -z 40 40 1024x1024.png --out "$APP_PATH/AppIcon20x20@2x.png"
           sips -z 60 60 1024x1024.png --out "$APP_PATH/AppIcon20x20@3x.png"
@@ -69,14 +75,10 @@ jobs:
           sips -z 152 152 1024x1024.png --out "$APP_PATH/AppIcon76x76@2x.png"
           sips -z 167 167 1024x1024.png --out "$APP_PATH/AppIcon83.5x83.5@2x.png"
 
-          # Update Info.plist to reference the icons
           PLIST="$APP_PATH/Info.plist"
-
-          # Remove existing icon entries if any
           /usr/libexec/PlistBuddy -c "Delete :CFBundleIcons" "$PLIST" 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Delete :CFBundleIcons~ipad" "$PLIST" 2>/dev/null || true
 
-          # Add iPhone icons
           /usr/libexec/PlistBuddy -c "Add :CFBundleIcons dict" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon dict" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles array" "$PLIST"
@@ -88,7 +90,6 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles: string AppIcon83.5x83.5" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon:UIPrerenderedIcon bool true" "$PLIST"
 
-          # Add iPad icons
           /usr/libexec/PlistBuddy -c "Add :CFBundleIcons~ipad dict" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :CFBundleIcons~ipad:CFBundlePrimaryIcon dict" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :CFBundleIcons~ipad:CFBundlePrimaryIcon:CFBundleIconFiles array" "$PLIST"
@@ -102,6 +103,66 @@ jobs:
 
           echo "Icons injected successfully!"
           ls -la "$APP_PATH"/AppIcon*.png
+
+      # ── Fakesign with ldid for TrollStore compatibility ──
+      - name: Fakesign for TrollStore
+        run: |
+          echo "═══ Fakesigning for TrollStore ═══"
+
+          APP_PATH=$(find ./build -name "*.app" -path "*Release-iphoneos*" | head -1)
+          echo "App path: $APP_PATH"
+
+          # Create entitlements plist
+          cat > /tmp/entitlements.plist << 'ENTXML'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>platform-application</key>
+            <true/>
+            <key>com.apple.private.security.no-container</key>
+            <true/>
+            <key>get-task-allow</key>
+            <true/>
+          </dict>
+          </plist>
+          ENTXML
+
+          # Fakesign the main binary
+          APP_NAME=$(basename "$APP_PATH" .app)
+          BINARY_PATH="$APP_PATH/$APP_NAME"
+
+          if [ -f "$BINARY_PATH" ]; then
+            echo "Fakesigning binary: $BINARY_PATH"
+            ldid -S/tmp/entitlements.plist "$BINARY_PATH"
+            echo "Main binary signed!"
+          else
+            echo "Binary not found at: $BINARY_PATH"
+            echo "Looking for binaries..."
+            find "$APP_PATH" -type f -perm +111 | head -10
+            # Try to sign whatever executable we find
+            for bin in $(find "$APP_PATH" -type f -perm +111 ! -name "*.dylib" ! -name "*.png" ! -name "*.plist"); do
+              echo "Fakesigning: $bin"
+              ldid -S/tmp/entitlements.plist "$bin" 2>/dev/null || true
+            done
+          fi
+
+          # Also fakesign any frameworks/dylibs
+          find "$APP_PATH" -name "*.dylib" -o -name "*.framework" | while read fw; do
+            if [ -d "$fw" ]; then
+              fw_name=$(basename "$fw" .framework)
+              fw_bin="$fw/$fw_name"
+              if [ -f "$fw_bin" ]; then
+                echo "Fakesigning framework: $fw_bin"
+                ldid -S/tmp/entitlements.plist "$fw_bin" 2>/dev/null || true
+              fi
+            elif [ -f "$fw" ]; then
+              echo "Fakesigning dylib: $fw"
+              ldid -S/tmp/entitlements.plist "$fw" 2>/dev/null || true
+            fi
+          done
+
+          echo "═══ Fakesigning complete ═══"
 
       - name: Package IPA for TrollStore
         run: |
