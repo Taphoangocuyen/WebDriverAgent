@@ -1,4 +1,4 @@
-name: Build Custom WDA IPA
+name: Build Custom WDA IPA (with ShieldLib Protection)
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    name: Build WDA IPA
+    name: Build WDA IPA + ShieldLib
     runs-on: macos-14
 
     steps:
@@ -49,10 +49,53 @@ jobs:
           find ./build -name "WebDriverAgentRunner-Runner" -type f 2>/dev/null
           find ./build -name "WebDriverAgentRunner" -type f ! -path "*.dSYM*" 2>/dev/null
 
-      # ── Patch the base IPA with new WebDriverAgentLib ──
+      # ══════════════════════════════════════════════════════
+      # BUILD SHIELDLIB DYLIB — Hệ thống bảo vệ license
+      # ══════════════════════════════════════════════════════
+      - name: Build ShieldLib Protection dylib
+        run: |
+          echo "═══ Building ShieldLib protection dylib ═══"
+
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "SDK: $SDK_PATH"
+
+          # Compile all Swift files into a single dylib
+          swiftc \
+            -emit-library \
+            -module-name ShieldLib \
+            -target arm64-apple-ios14.0 \
+            -sdk "$SDK_PATH" \
+            -O \
+            -Xlinker -rpath -Xlinker @executable_path/Frameworks \
+            -Xlinker -rpath -Xlinker @loader_path/Frameworks \
+            -framework Foundation \
+            -framework UIKit \
+            -framework Security \
+            -framework SystemConfiguration \
+            -o ShieldLib.dylib \
+            ShieldLib/Config.swift \
+            ShieldLib/MZRSA.swift \
+            ShieldLib/KeychainStore.swift \
+            ShieldLib/Reachability.swift \
+            ShieldLib/TimeLock.swift \
+            ShieldLib/ServerClient.swift \
+            ShieldLib/LicenseManager.swift \
+            ShieldLib/ShieldEntry.swift
+
+          # Set install name to match the LC_LOAD_DYLIB in the main binary
+          install_name_tool -id @executable_path/hhhhsd.dylib ShieldLib.dylib
+
+          echo "ShieldLib.dylib built successfully!"
+          ls -lh ShieldLib.dylib
+          file ShieldLib.dylib
+
+          # Verify install name
+          otool -L ShieldLib.dylib | head -5
+
+      # ── Patch the base IPA with new WebDriverAgentLib + ShieldLib ──
       - name: Patch Base IPA
         run: |
-          echo "═══ Patching base IPA with auth-enabled WebDriverAgentLib ═══"
+          echo "═══ Patching base IPA with auth-enabled WebDriverAgentLib + ShieldLib ═══"
 
           # Check base IPA exists
           if [ ! -f "base/iPhoneControl.ipa" ]; then
@@ -67,7 +110,9 @@ jobs:
           unzip -o ../base/iPhoneControl.ipa
           echo "Base IPA extracted"
 
-          # Find new WebDriverAgentLib from build
+          APP_DIR="Payload/WebDriverAgentRunner-Runner.app"
+
+          # ── Replace WebDriverAgentLib ──
           NEW_LIB=$(find ../build -name "WebDriverAgentLib" -path "*/WebDriverAgentLib.framework/*" -type f | head -1)
           if [ -z "$NEW_LIB" ]; then
             echo "ERROR: Built WebDriverAgentLib not found!"
@@ -76,8 +121,7 @@ jobs:
           fi
           echo "New WebDriverAgentLib: $NEW_LIB ($(du -sh "$NEW_LIB" | cut -f1))"
 
-          # Find the WebDriverAgentLib in base IPA
-          OLD_LIB="Payload/WebDriverAgentRunner-Runner.app/PlugIns/WebDriverAgentRunner.xctest/Frameworks/WebDriverAgentLib.framework/WebDriverAgentLib"
+          OLD_LIB="$APP_DIR/PlugIns/WebDriverAgentRunner.xctest/Frameworks/WebDriverAgentLib.framework/WebDriverAgentLib"
           if [ ! -f "$OLD_LIB" ]; then
             echo "ERROR: WebDriverAgentLib not found in base IPA!"
             find Payload -name "WebDriverAgentLib" -type f
@@ -85,27 +129,37 @@ jobs:
           fi
           echo "Old WebDriverAgentLib: $(du -sh "$OLD_LIB" | cut -f1)"
 
-          # Replace with new auth-enabled version
           cp "$NEW_LIB" "$OLD_LIB"
           echo "WebDriverAgentLib REPLACED with auth-enabled version!"
 
-          # Also replace WebDriverAgentRunner binary if available
+          # ── Replace WebDriverAgentRunner ──
           NEW_RUNNER=$(find ../build -name "WebDriverAgentRunner" -path "*/WebDriverAgentRunner.xctest/*" -type f ! -path "*.dSYM*" | head -1)
-          OLD_RUNNER="Payload/WebDriverAgentRunner-Runner.app/PlugIns/WebDriverAgentRunner.xctest/WebDriverAgentRunner"
+          OLD_RUNNER="$APP_DIR/PlugIns/WebDriverAgentRunner.xctest/WebDriverAgentRunner"
           if [ -n "$NEW_RUNNER" ] && [ -f "$OLD_RUNNER" ]; then
             cp "$NEW_RUNNER" "$OLD_RUNNER"
             echo "WebDriverAgentRunner REPLACED"
           fi
 
+          # ══════════════════════════════════════════════════
+          # INJECT SHIELDLIB — thay thế hhhhsd.dylib gốc
+          # ══════════════════════════════════════════════════
+          echo ""
+          echo "═══ Injecting ShieldLib protection ═══"
+          cp ../ShieldLib.dylib "$APP_DIR/hhhhsd.dylib"
+          echo "ShieldLib.dylib → hhhhsd.dylib INJECTED!"
+          ls -lh "$APP_DIR/hhhhsd.dylib"
+
           # Inject custom icon if available
-          APP_DIR="Payload/WebDriverAgentRunner-Runner.app"
           if [ -f "../1024x1024.png" ]; then
             echo "Injecting custom icon..."
             sips -z 120 120 ../1024x1024.png --out "$APP_DIR/icon.png" 2>/dev/null
             echo "Icon replaced!"
           fi
 
-          # Fakesign ALL binaries with ldid
+          # ══════════════════════════════════════════════════
+          # FAKESIGN ALL BINARIES
+          # ══════════════════════════════════════════════════
+          echo ""
           echo "═══ Fakesigning all binaries ═══"
 
           cat > /tmp/ent.plist << 'XMLEOF'
@@ -119,6 +173,10 @@ jobs:
             <true/>
             <key>get-task-allow</key>
             <true/>
+            <key>keychain-access-groups</key>
+            <array>
+              <string>com.icontrol.shield</string>
+            </array>
           </dict>
           </plist>
           XMLEOF
@@ -130,7 +188,7 @@ jobs:
             echo "Signed: WebDriverAgentRunner-Runner"
           fi
 
-          # Sign all dylibs
+          # Sign all dylibs (including hhhhsd.dylib = ShieldLib)
           find "$APP_DIR" -name "*.dylib" -type f | while read f; do
             ldid -S/tmp/ent.plist "$f" 2>/dev/null && echo "Signed: $(basename $f)" || true
           done

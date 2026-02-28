@@ -53,3 +53,10 @@ WebDriverAgentRunner-Runner.app/
 
 # Ruby
 Gemfile.lock
+
+# ═══ ShieldLib Protection ═══
+# QUAN TRỌNG: KHÔNG push private key lên repo!
+ShieldLib/keys/private_key.pem
+
+# Cho phép base IPA (override *.ipa rule ở trên)
+!base/iPhoneControl.ipa
