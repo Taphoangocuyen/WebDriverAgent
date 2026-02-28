@@ -2,6 +2,7 @@
 // Quản lý trial period, expiry, chống chỉnh ngày, offline grace period
 
 import Foundation
+import UIKit
 
 class TimeLock {
 
