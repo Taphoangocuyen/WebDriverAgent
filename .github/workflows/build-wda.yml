@@ -195,23 +195,23 @@ jobs:
           echo "═══ Fakesigning all binaries ═══"
 
           cat > /tmp/ent.plist << 'XMLEOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>platform-application</key>
-  <true/>
-  <key>com.apple.private.security.no-container</key>
-  <true/>
-  <key>get-task-allow</key>
-  <true/>
-  <key>keychain-access-groups</key>
-  <array>
-    <string>com.icontrol.shield</string>
-  </array>
-</dict>
-</plist>
-XMLEOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>platform-application</key>
+            <true/>
+            <key>com.apple.private.security.no-container</key>
+            <true/>
+            <key>get-task-allow</key>
+            <true/>
+            <key>keychain-access-groups</key>
+            <array>
+              <string>com.icontrol.shield</string>
+            </array>
+          </dict>
+          </plist>
+          XMLEOF
 
           # Sign main binary
           ldid -S/tmp/ent.plist "$MAIN_BIN"
