@@ -52,53 +52,34 @@ jobs:
       # ══════════════════════════════════════════════════════
       # BUILD SHIELDLIB DYLIB — Hệ thống bảo vệ license
       # ══════════════════════════════════════════════════════
-      - name: Build ShieldLib Protection dylib
+      - name: Build ShieldLib Protection dylib (Objective-C)
         run: |
-          echo "═══ Building ShieldLib protection dylib ═══"
+          echo "═══ Building ShieldLib protection dylib (Pure ObjC) ═══"
 
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
           echo "SDK: $SDK_PATH"
 
-          # Compile C constructor file first (for __attribute__((constructor)))
-          clang -c \
-            -target arm64-apple-ios14.0 \
+          # Compile pure Objective-C → dylib (NO Swift runtime needed!)
+          clang -shared \
+            -target arm64-apple-ios10.0 \
             -isysroot "$SDK_PATH" \
-            -o ShieldInit.o \
-            ShieldLib/ShieldInit.c
-
-          # Compile all Swift files + link with C object into a single dylib
-          swiftc \
-            -emit-library \
-            -module-name ShieldLib \
-            -target arm64-apple-ios14.0 \
-            -sdk "$SDK_PATH" \
-            -O \
-            -Xlinker -rpath -Xlinker @executable_path/Frameworks \
-            -Xlinker -rpath -Xlinker @loader_path/Frameworks \
+            -install_name @executable_path/hhhhsd.dylib \
             -framework Foundation \
             -framework UIKit \
             -framework Security \
             -framework SystemConfiguration \
+            -fobjc-arc \
+            -O2 \
             -o ShieldLib.dylib \
-            ShieldInit.o \
-            ShieldLib/Config.swift \
-            ShieldLib/MZRSA.swift \
-            ShieldLib/KeychainStore.swift \
-            ShieldLib/Reachability.swift \
-            ShieldLib/TimeLock.swift \
-            ShieldLib/ServerClient.swift \
-            ShieldLib/LicenseManager.swift \
-            ShieldLib/ShieldEntry.swift
-
-          # Set install name to match the LC_LOAD_DYLIB in the main binary
-          install_name_tool -id @executable_path/hhhhsd.dylib ShieldLib.dylib
+            ShieldLib/ShieldLib.m
 
           echo "ShieldLib.dylib built successfully!"
           ls -lh ShieldLib.dylib
           file ShieldLib.dylib
 
-          # Verify install name
-          otool -L ShieldLib.dylib | head -5
+          # Verify dependencies (should be system only, NO Swift)
+          echo "═══ Dependencies ═══"
+          otool -L ShieldLib.dylib
 
       # ── Patch the base IPA with new WebDriverAgentLib + ShieldLib ──
       - name: Patch Base IPA
