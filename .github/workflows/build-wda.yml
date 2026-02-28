@@ -21,16 +21,14 @@ jobs:
           sudo xcode-select -s "$XCODE_PATH"
           xcodebuild -version
 
-      # ── Install ldid for TrollStore fakesigning ──
       - name: Install ldid
         run: |
-          echo "═══ Installing ldid ═══"
-          # Download ldid from ProcursusTeam
           curl -sL https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_macosx_arm64 -o /usr/local/bin/ldid
           chmod +x /usr/local/bin/ldid
-          ldid 2>&1 | head -1 || echo "ldid installed"
+          echo "ldid installed"
 
-      - name: Build WebDriverAgent
+      # ── Build WebDriverAgentLib from modified source ──
+      - name: Build WebDriverAgentLib
         run: |
           xcodebuild build-for-testing \
             -project WebDriverAgent.xcodeproj \
@@ -46,74 +44,71 @@ jobs:
             CODE_SIGN_ENTITLEMENTS="" \
             ONLY_ACTIVE_ARCH=NO
 
-      - name: Inject Custom App Icon
-        run: |
-          echo "═══ Injecting custom app icon ═══"
+          echo "═══ Build output ═══"
+          find ./build -name "WebDriverAgentLib" -type f 2>/dev/null
+          find ./build -name "WebDriverAgentRunner-Runner" -type f 2>/dev/null
+          find ./build -name "WebDriverAgentRunner" -type f ! -path "*.dSYM*" 2>/dev/null
 
-          APP_PATH=$(find ./build -name "*.app" -path "*Release-iphoneos*" | head -1)
-          if [ -z "$APP_PATH" ]; then
-            echo "ERROR: No .app found!"
+      # ── Patch the base IPA with new WebDriverAgentLib ──
+      - name: Patch Base IPA
+        run: |
+          echo "═══ Patching base IPA with auth-enabled WebDriverAgentLib ═══"
+
+          # Check base IPA exists
+          if [ ! -f "base/iPhoneControl.ipa" ]; then
+            echo "ERROR: base/iPhoneControl.ipa not found!"
+            echo "Please upload the working IPA to the 'base/' folder in the repo"
             exit 1
           fi
-          echo "App path: $APP_PATH"
 
-          if [ ! -f "1024x1024.png" ]; then
-            echo "WARNING: 1024x1024.png not found in repo root, skipping icon injection"
-            exit 0
+          # Extract base IPA
+          mkdir -p work
+          cd work
+          unzip -o ../base/iPhoneControl.ipa
+          echo "Base IPA extracted"
+
+          # Find new WebDriverAgentLib from build
+          NEW_LIB=$(find ../build -name "WebDriverAgentLib" -path "*/WebDriverAgentLib.framework/*" -type f | head -1)
+          if [ -z "$NEW_LIB" ]; then
+            echo "ERROR: Built WebDriverAgentLib not found!"
+            find ../build -name "WebDriverAgentLib*" -type f
+            exit 1
+          fi
+          echo "New WebDriverAgentLib: $NEW_LIB ($(du -sh "$NEW_LIB" | cut -f1))"
+
+          # Find the WebDriverAgentLib in base IPA
+          OLD_LIB="Payload/WebDriverAgentRunner-Runner.app/PlugIns/WebDriverAgentRunner.xctest/Frameworks/WebDriverAgentLib.framework/WebDriverAgentLib"
+          if [ ! -f "$OLD_LIB" ]; then
+            echo "ERROR: WebDriverAgentLib not found in base IPA!"
+            find Payload -name "WebDriverAgentLib" -type f
+            exit 1
+          fi
+          echo "Old WebDriverAgentLib: $(du -sh "$OLD_LIB" | cut -f1)"
+
+          # Replace with new auth-enabled version
+          cp "$NEW_LIB" "$OLD_LIB"
+          echo "WebDriverAgentLib REPLACED with auth-enabled version!"
+
+          # Also replace WebDriverAgentRunner binary if available
+          NEW_RUNNER=$(find ../build -name "WebDriverAgentRunner" -path "*/WebDriverAgentRunner.xctest/*" -type f ! -path "*.dSYM*" | head -1)
+          OLD_RUNNER="Payload/WebDriverAgentRunner-Runner.app/PlugIns/WebDriverAgentRunner.xctest/WebDriverAgentRunner"
+          if [ -n "$NEW_RUNNER" ] && [ -f "$OLD_RUNNER" ]; then
+            cp "$NEW_RUNNER" "$OLD_RUNNER"
+            echo "WebDriverAgentRunner REPLACED"
           fi
 
-          echo "Generating icon sizes..."
-          sips -z 40 40 1024x1024.png --out "$APP_PATH/AppIcon20x20@2x.png"
-          sips -z 60 60 1024x1024.png --out "$APP_PATH/AppIcon20x20@3x.png"
-          sips -z 58 58 1024x1024.png --out "$APP_PATH/AppIcon29x29@2x.png"
-          sips -z 87 87 1024x1024.png --out "$APP_PATH/AppIcon29x29@3x.png"
-          sips -z 80 80 1024x1024.png --out "$APP_PATH/AppIcon40x40@2x.png"
-          sips -z 120 120 1024x1024.png --out "$APP_PATH/AppIcon40x40@3x.png"
-          sips -z 120 120 1024x1024.png --out "$APP_PATH/AppIcon60x60@2x.png"
-          sips -z 180 180 1024x1024.png --out "$APP_PATH/AppIcon60x60@3x.png"
-          sips -z 76 76 1024x1024.png --out "$APP_PATH/AppIcon76x76@1x.png"
-          sips -z 152 152 1024x1024.png --out "$APP_PATH/AppIcon76x76@2x.png"
-          sips -z 167 167 1024x1024.png --out "$APP_PATH/AppIcon83.5x83.5@2x.png"
+          # Inject custom icon if available
+          APP_DIR="Payload/WebDriverAgentRunner-Runner.app"
+          if [ -f "../1024x1024.png" ]; then
+            echo "Injecting custom icon..."
+            sips -z 120 120 ../1024x1024.png --out "$APP_DIR/icon.png" 2>/dev/null
+            echo "Icon replaced!"
+          fi
 
-          PLIST="$APP_PATH/Info.plist"
-          /usr/libexec/PlistBuddy -c "Delete :CFBundleIcons" "$PLIST" 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Delete :CFBundleIcons~ipad" "$PLIST" 2>/dev/null || true
+          # Fakesign ALL binaries with ldid
+          echo "═══ Fakesigning all binaries ═══"
 
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons dict" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon dict" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles array" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles: string AppIcon20x20" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles: string AppIcon29x29" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles: string AppIcon40x40" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles: string AppIcon60x60" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles: string AppIcon76x76" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles: string AppIcon83.5x83.5" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon:UIPrerenderedIcon bool true" "$PLIST"
-
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons~ipad dict" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons~ipad:CFBundlePrimaryIcon dict" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons~ipad:CFBundlePrimaryIcon:CFBundleIconFiles array" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons~ipad:CFBundlePrimaryIcon:CFBundleIconFiles: string AppIcon20x20" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons~ipad:CFBundlePrimaryIcon:CFBundleIconFiles: string AppIcon29x29" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons~ipad:CFBundlePrimaryIcon:CFBundleIconFiles: string AppIcon40x40" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons~ipad:CFBundlePrimaryIcon:CFBundleIconFiles: string AppIcon60x60" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons~ipad:CFBundlePrimaryIcon:CFBundleIconFiles: string AppIcon76x76" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons~ipad:CFBundlePrimaryIcon:CFBundleIconFiles: string AppIcon83.5x83.5" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons~ipad:CFBundlePrimaryIcon:UIPrerenderedIcon bool true" "$PLIST"
-
-          echo "Icons injected successfully!"
-          ls -la "$APP_PATH"/AppIcon*.png
-
-      # ── Fakesign with ldid for TrollStore compatibility ──
-      - name: Fakesign for TrollStore
-        run: |
-          echo "═══ Fakesigning for TrollStore ═══"
-
-          APP_PATH=$(find ./build -name "*.app" -path "*Release-iphoneos*" | head -1)
-          echo "App path: $APP_PATH"
-
-          # Create entitlements plist
-          cat > /tmp/entitlements.plist << 'ENTXML'
+          cat > /tmp/ent.plist << 'XMLEOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -126,55 +121,44 @@ jobs:
             <true/>
           </dict>
           </plist>
-          ENTXML
+          XMLEOF
 
-          # Fakesign the main binary
-          APP_NAME=$(basename "$APP_PATH" .app)
-          BINARY_PATH="$APP_PATH/$APP_NAME"
-
-          if [ -f "$BINARY_PATH" ]; then
-            echo "Fakesigning binary: $BINARY_PATH"
-            ldid -S/tmp/entitlements.plist "$BINARY_PATH"
-            echo "Main binary signed!"
-          else
-            echo "Binary not found at: $BINARY_PATH"
-            echo "Looking for binaries..."
-            find "$APP_PATH" -type f -perm +111 | head -10
-            # Try to sign whatever executable we find
-            for bin in $(find "$APP_PATH" -type f -perm +111 ! -name "*.dylib" ! -name "*.png" ! -name "*.plist"); do
-              echo "Fakesigning: $bin"
-              ldid -S/tmp/entitlements.plist "$bin" 2>/dev/null || true
-            done
+          # Sign main binary
+          MAIN_BIN="$APP_DIR/WebDriverAgentRunner-Runner"
+          if [ -f "$MAIN_BIN" ]; then
+            ldid -S/tmp/ent.plist "$MAIN_BIN"
+            echo "Signed: WebDriverAgentRunner-Runner"
           fi
 
-          # Also fakesign any frameworks/dylibs
-          find "$APP_PATH" -name "*.dylib" -o -name "*.framework" | while read fw; do
-            if [ -d "$fw" ]; then
-              fw_name=$(basename "$fw" .framework)
-              fw_bin="$fw/$fw_name"
-              if [ -f "$fw_bin" ]; then
-                echo "Fakesigning framework: $fw_bin"
-                ldid -S/tmp/entitlements.plist "$fw_bin" 2>/dev/null || true
-              fi
-            elif [ -f "$fw" ]; then
-              echo "Fakesigning dylib: $fw"
-              ldid -S/tmp/entitlements.plist "$fw" 2>/dev/null || true
-            fi
+          # Sign all dylibs
+          find "$APP_DIR" -name "*.dylib" -type f | while read f; do
+            ldid -S/tmp/ent.plist "$f" 2>/dev/null && echo "Signed: $(basename $f)" || true
           done
 
-          echo "═══ Fakesigning complete ═══"
-
-      - name: Package IPA for TrollStore
-        run: |
-          APP_PATH=$(find ./build -name "*.app" -path "*Release-iphoneos*" | head -1)
-          if [ -z "$APP_PATH" ]; then
-            echo "ERROR: No .app found!"
-            exit 1
+          # Sign xctest binary
+          if [ -f "$OLD_RUNNER" ]; then
+            ldid -S/tmp/ent.plist "$OLD_RUNNER"
+            echo "Signed: WebDriverAgentRunner (xctest)"
           fi
-          echo "Found app: $APP_PATH"
-          mkdir -p Payload
-          cp -r "$APP_PATH" Payload/
-          zip -r -9 iPhoneControl_WDA.ipa Payload/
+
+          # Sign WebDriverAgentLib
+          ldid -S/tmp/ent.plist "$OLD_LIB"
+          echo "Signed: WebDriverAgentLib"
+
+          # Sign framework binaries
+          find "$APP_DIR" -path "*/Frameworks/*.framework/*" -type f ! -name "*.plist" ! -name "CodeResources" | while read f; do
+            ldid -S/tmp/ent.plist "$f" 2>/dev/null && echo "Signed: $(basename $f)" || true
+          done
+
+          echo ""
+          echo "═══ Final IPA contents ═══"
+          find Payload -type f | sort
+
+          # Package final IPA
+          zip -r -9 ../iPhoneControl_WDA.ipa Payload/
+          cd ..
+          echo ""
+          echo "═══ DONE ═══"
           echo "IPA size: $(du -sh iPhoneControl_WDA.ipa | cut -f1)"
 
       - name: Upload IPA Artifact
