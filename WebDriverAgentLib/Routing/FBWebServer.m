@@ -25,6 +25,13 @@
 
 #import "XCUIDevice+FBHelpers.h"
 
+// ═══════════════════════════════════════════════════════
+// IPC AUTH — Only iPhone-Control can connect
+// Token MUST match the one in wda_manager.rs
+// ═══════════════════════════════════════════════════════
+static NSString *const IPC_AUTH_HEADER = @"X-IPC-Auth";
+static NSString *const IPC_AUTH_TOKEN  = @"ipc-2025-secret-a7b3c9d1e5f8";
+
 static NSString *const FBServerURLBeginMarker = @"ServerURLHere->";
 static NSString *const FBServerURLEndMarker = @"<-ServerURLHere";
 
@@ -85,7 +92,7 @@ static NSString *const FBServerURLEndMarker = @"<-ServerURLHere";
   [self.server setRouteQueue:dispatch_get_main_queue()];
   [self.server setDefaultHeader:@"Server" value:@"WebDriverAgent/1.0"];
   [self.server setDefaultHeader:@"Access-Control-Allow-Origin" value:@"*"];
-  [self.server setDefaultHeader:@"Access-Control-Allow-Headers" value:@"Content-Type, X-Requested-With"];
+  [self.server setDefaultHeader:@"Access-Control-Allow-Headers" value:@"Content-Type, X-Requested-With, X-IPC-Auth"];
   [self.server setConnectionClass:[FBHTTPConnection self]];
 
   [self registerRouteHandlers:[self.class collectCommandHandlerClasses]];
@@ -97,7 +104,7 @@ static NSString *const FBServerURLEndMarker = @"<-ServerURLHere";
     [self.server setInterface:bindingIP];
     [FBLogger logFmt:@"Using custom binding IP address: %@", bindingIP];
   }
-  
+
   NSError *error;
   BOOL serverStarted = NO;
 
@@ -117,7 +124,7 @@ static NSString *const FBServerURLEndMarker = @"<-ServerURLHere";
     [FBLogger logFmt:@"Last attempt to start web server failed with error %@", [error description]];
     abort();
   }
-  
+
   NSString *serverHost = bindingIP ?: ([XCUIDevice sharedDevice].fb_wifiIPAddress ?: @"127.0.0.1");
   [FBLogger logFmt:@"%@http://%@:%d%@", FBServerURLBeginMarker, serverHost, [self.server port], FBServerURLEndMarker];
 }
@@ -196,6 +203,17 @@ static NSString *const FBServerURLEndMarker = @"<-ServerURLHere";
     NSArray *routes = [commandHandler routes];
     for (FBRoute *route in routes) {
       [self.server handleMethod:route.verb withPath:route.path block:^(RouteRequest *request, RouteResponse *response) {
+
+        // ═══ IPC AUTH CHECK — Block unauthorized clients ═══
+        NSString *authValue = [request header:IPC_AUTH_HEADER];
+        if (![IPC_AUTH_TOKEN isEqualToString:authValue]) {
+          [FBLogger logFmt:@"[AUTH] REJECTED %@ %@ — invalid token", request.method, request.url];
+          [response setStatusCode:403];
+          [response respondWithString:@"{\"value\":{\"error\":\"forbidden\",\"message\":\"Invalid IPC auth token\"}}"];
+          return;
+        }
+        // ═══ END AUTH CHECK ═══
+
         NSDictionary *arguments = [NSJSONSerialization JSONObjectWithData:request.body options:NSJSONReadingMutableContainers error:NULL];
         FBRouteRequest *routeParams = [FBRouteRequest
           routeRequestWithURL:request.url
@@ -223,6 +241,7 @@ static NSString *const FBServerURLEndMarker = @"<-ServerURLHere";
 
 - (void)registerServerKeyRouteHandlers
 {
+  // /health — public (no auth required)
   [self.server get:@"/health" withBlock:^(RouteRequest *request, RouteResponse *response) {
     [response respondWithString:@"<!DOCTYPE html><html><title>Health Check</title><body><p>I-AM-ALIVE</p></body></html>"];
   }];
@@ -237,7 +256,14 @@ static NSString *const FBServerURLEndMarker = @"<-ServerURLHere";
     [response respondWithString:calibrationPage];
   }];
 
+  // /wda/shutdown — PROTECTED (requires auth)
   [self.server get:@"/wda/shutdown" withBlock:^(RouteRequest *request, RouteResponse *response) {
+    NSString *authValue = [request header:IPC_AUTH_HEADER];
+    if (![IPC_AUTH_TOKEN isEqualToString:authValue]) {
+      [response setStatusCode:403];
+      [response respondWithString:@"{\"value\":{\"error\":\"forbidden\",\"message\":\"Invalid IPC auth token\"}}"];
+      return;
+    }
     [response respondWithString:@"Shutting down"];
     [self.delegate webServerDidRequestShutdown:self];
   }];
