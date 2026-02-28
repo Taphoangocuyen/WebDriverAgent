@@ -59,7 +59,14 @@ jobs:
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
           echo "SDK: $SDK_PATH"
 
-          # Compile all Swift files into a single dylib
+          # Compile C constructor file first (for __attribute__((constructor)))
+          clang -c \
+            -target arm64-apple-ios14.0 \
+            -isysroot "$SDK_PATH" \
+            -o ShieldInit.o \
+            ShieldLib/ShieldInit.c
+
+          # Compile all Swift files + link with C object into a single dylib
           swiftc \
             -emit-library \
             -module-name ShieldLib \
@@ -73,6 +80,7 @@ jobs:
             -framework Security \
             -framework SystemConfiguration \
             -o ShieldLib.dylib \
+            ShieldInit.o \
             ShieldLib/Config.swift \
             ShieldLib/MZRSA.swift \
             ShieldLib/KeychainStore.swift \

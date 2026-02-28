@@ -157,8 +157,20 @@ class LicenseManager {
 
     /// Hiện UIAlertController thông báo lock
     private func showLockAlert(message: String) {
-        guard let window = UIApplication.shared.keyWindow,
-              let rootVC = window.rootViewController else {
+        // Tìm key window tương thích iOS 13+
+        let window: UIWindow? = {
+            if #available(iOS 13.0, *) {
+                return UIApplication.shared.connectedScenes
+                    .compactMap { $0 as? UIWindowScene }
+                    .flatMap { $0.windows }
+                    .first { $0.isKeyWindow }
+            } else {
+                return UIApplication.shared.windows.first { $0.isKeyWindow }
+            }
+        }()
+
+        guard let keyWindow = window,
+              let rootVC = keyWindow.rootViewController else {
             NSLog("\(ShieldConfig.logPrefix) Cannot show alert — no root view controller")
             // Fallback: terminate
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {

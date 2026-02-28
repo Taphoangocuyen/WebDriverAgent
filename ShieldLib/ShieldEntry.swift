@@ -7,22 +7,19 @@ import UIKit
 
 // ═══════════════════════════════════════════════════════════
 // DYLIB ENTRY POINT
-// Khi iOS load dylib → ObjC runtime gọi +[ShieldLoader load]
-// → checkLicense() → nếu OK thì WDA chạy bình thường
-// → nếu FAIL thì block WDA hoặc thoát app
+// ShieldInit.c chứa __attribute__((constructor)) gọi → shield_constructor_entry()
+// → đăng ký observer → khi app launch xong → checkLicense()
 // ═══════════════════════════════════════════════════════════
 
 @objc class ShieldLoader: NSObject {
 
-    /// +load() được gọi TỰ ĐỘNG khi dylib load — trước cả main()
-    /// Dùng để đăng ký observer, chờ app launch xong mới check license
-    override class func load() {
+    /// Được gọi từ C constructor khi dylib load
+    @objc static func initializeShield() {
         NSLog("\(ShieldConfig.logPrefix) ═══ ShieldLib loaded ═══")
         NSLog("\(ShieldConfig.logPrefix) Module: ShieldLib v1.0")
         NSLog("\(ShieldConfig.logPrefix) App: \(ShieldConfig.appName)")
 
         // Đăng ký observer đợi app launch xong
-        // Vì +load() chạy quá sớm, UIApplication chưa ready
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(appDidFinishLaunching),
@@ -46,10 +43,9 @@ import UIKit
         let result = LicenseManager.shared.checkLicense()
 
         if result {
-            NSLog("\(ShieldConfig.logPrefix) ✓ License OK — WDA allowed to run")
+            NSLog("\(ShieldConfig.logPrefix) License OK — WDA allowed to run")
         } else {
-            NSLog("\(ShieldConfig.logPrefix) ✗ License FAILED — WDA blocked")
-            // LicenseManager đã show alert + sẽ exit(0)
+            NSLog("\(ShieldConfig.logPrefix) License FAILED — WDA blocked")
         }
 
         // Log license info
@@ -58,6 +54,15 @@ import UIKit
             NSLog("\(ShieldConfig.logPrefix)   \(key): \(value)")
         }
     }
+}
+
+// ═══════════════════════════════════════════════════════════
+// C-callable entry point — gọi từ ShieldInit.c constructor
+// ═══════════════════════════════════════════════════════════
+
+@_cdecl("shield_constructor_entry")
+public func shieldConstructorEntry() {
+    ShieldLoader.initializeShield()
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -79,7 +84,6 @@ public func shieldGetInfo() -> UnsafePointer<CChar>? {
           let jsonStr = String(data: data, encoding: .utf8) else {
         return nil
     }
-    // Cần giữ reference để pointer không bị dealloc
     return (jsonStr as NSString).utf8String
 }
 
