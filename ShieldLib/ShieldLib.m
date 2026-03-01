@@ -108,18 +108,9 @@ static NSString *ShieldGetDeviceID(void) {
     NSString *saved = KeychainLoad(KEY_DEVICE_ID);
     if (saved) return saved;
 
-    // UIDevice phải gọi từ main thread
-    __block NSString *deviceID = nil;
-    if ([NSThread isMainThread]) {
-        deviceID = [UIDevice currentDevice].identifierForVendor.UUIDString;
-    } else {
-        dispatch_sync(dispatch_get_main_queue(), ^{
-            deviceID = [UIDevice currentDevice].identifierForVendor.UUIDString;
-        });
-    }
-    if (!deviceID) {
-        deviceID = [NSUUID UUID].UUIDString;
-    }
+    // Dùng NSUUID thay vì UIDevice — không cần main thread
+    // Tránh block main thread gây WDA chớp
+    NSString *deviceID = [NSUUID UUID].UUIDString;
     KeychainSave(KEY_DEVICE_ID, deviceID);
     return deviceID;
 }
@@ -258,13 +249,7 @@ static ShieldLockStatus ShieldCheckTimeLock(void) {
 }
 
 - (BOOL)checkLicense {
-    NSLog(@"%@ ═══════════════════════════════════════", SHIELD_LOG_PREFIX);
-    NSLog(@"%@ License check started", SHIELD_LOG_PREFIX);
-    NSLog(@"%@ App: %@ (%@)", SHIELD_LOG_PREFIX, SHIELD_APP_NAME, SHIELD_APP_ID);
-    NSLog(@"%@ Device: %@", SHIELD_LOG_PREFIX, ShieldGetDeviceID());
-    NSLog(@"%@ Network: %@", SHIELD_LOG_PREFIX, ShieldIsNetworkReachable() ? @"YES" : @"NO");
-    NSLog(@"%@ Server: %@", SHIELD_LOG_PREFIX, SHIELD_SERVER_ENABLED ? SHIELD_SERVER_URL : @"DISABLED");
-    NSLog(@"%@ ═══════════════════════════════════════", SHIELD_LOG_PREFIX);
+    NSLog(@"%@ License check — device:%@", SHIELD_LOG_PREFIX, ShieldGetDeviceID());
 
     ShieldLockStatus status = ShieldCheckTimeLock();
 
@@ -346,8 +331,7 @@ static ShieldLockStatus ShieldCheckTimeLock(void) {
 
 __attribute__((constructor))
 static void shield_dylib_init(void) {
-    NSLog(@"%@ ═══ ShieldLib loaded (ObjC) ═══", SHIELD_LOG_PREFIX);
-    NSLog(@"%@ Module: ShieldLib v2.1", SHIELD_LOG_PREFIX);
+    NSLog(@"%@ ShieldLib v3.0 loaded", SHIELD_LOG_PREFIX);
 
     // Đợi app launch xong rồi mới check license
     [[NSNotificationCenter defaultCenter]
