@@ -125,6 +125,13 @@ jobs:
           python3 scripts/patch_auth.py WebDriverAgent "$AUTH_KEY" "$ROUTE_PREFIX"
           echo "✅ Auth patched (Layer 1 — source injection)"
 
+          # Verify patch applied correctly
+          RC_FILE=$(find WebDriverAgent -name "RoutingConnection.m" -type f | head -1)
+          echo "=== Patched file: $RC_FILE ==="
+          echo "--- Auth guard code ---"
+          grep -A 20 "IPC Route Guard" "$RC_FILE" || echo "WARNING: patch not found!"
+          echo "--- End verify ---"
+
       # Layer 2 (IPCAuthGuard.m swizzle) đã bị loại bỏ:
       # - Swizzle runtime không đáng tin cậy (có thể không hook được)
       # - Xung đột với Layer 1 (double-strip prefix)

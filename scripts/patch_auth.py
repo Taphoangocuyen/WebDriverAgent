@@ -30,19 +30,20 @@ def patch_file(filepath, auth_key, route_prefix):
 
     // ═══ IPC Route Guard (source patch) ═══
     {
-      // Whitelist: /status và /health luôn cho phép
+      NSString *_ipcPrefix = @"/''' + route_prefix + '''/";
       BOOL _ipcIsPublic = [path isEqualToString:@"/status"]
                        || [path hasPrefix:@"/status?"]
                        || [path isEqualToString:@"/health"]
                        || [path hasPrefix:@"/health?"];
-      if (!_ipcIsPublic) {
-        NSString *_ipcPrefix = @"/''' + route_prefix + '''/";
-        if ([path hasPrefix:_ipcPrefix]) {
-          // Strip prefix: /ipc_xxx/session → /session
-          path = [path substringFromIndex:_ipcPrefix.length - 1];
-        } else {
-          path = @"/__ipc_blocked__";
-        }
+      if (_ipcIsPublic) {
+        NSLog(@"[IPC] PASS (public): %@ %@", method, path);
+      } else if ([path hasPrefix:_ipcPrefix]) {
+        NSString *_origPath = path;
+        path = [path substringFromIndex:_ipcPrefix.length - 1];
+        NSLog(@"[IPC] PASS (prefix): %@ %@ -> %@", method, _origPath, path);
+      } else {
+        NSLog(@"[IPC] BLOCK: %@ %@", method, path);
+        path = @"/__ipc_blocked__";
       }
     }
     // ═══ End IPC Route Guard ═══'''
