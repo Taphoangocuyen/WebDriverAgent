@@ -80,9 +80,9 @@ jobs:
           bash scripts/customize_wda.sh
 
       # ════════════════════════════════════════════════════════
-      # Bước 2: Patch auth — Layer 1 (inject vào RoutingConnection.m)
+      # Bước 2: Setup auth config (validate key, set env vars)
       # ════════════════════════════════════════════════════════
-      - name: Patch WDA with auth guard (Layer 1 — source patch)
+      - name: Setup auth configuration
         env:
           INPUT_AUTH_KEY: ${{ github.event.inputs.auth_key }}
           SECRET_AUTH_KEY: ${{ secrets.IPC_AUTH_KEY }}
@@ -120,13 +120,14 @@ jobs:
           } >> $GITHUB_ENV
           echo "ROUTE_PREFIX=$ROUTE_PREFIX" >> $GITHUB_ENV
 
-          python3 scripts/patch_auth.py WebDriverAgent "$AUTH_KEY" "$ROUTE_PREFIX"
-          echo "✅ Layer 1 patched"
+          # Layer 1 (patch_auth.py) đã bị loại bỏ — xung đột với Layer 2
+          # Chỉ dùng Layer 2 (IPCAuthGuard.m swizzle) để tránh double-strip prefix
+          echo "✅ Auth config ready (Layer 2 only)"
 
       # ════════════════════════════════════════════════════════
-      # Bước 3: Auth guard — Layer 2 (IPCAuthGuard.m swizzle backup)
+      # Bước 3: Auth guard — IPCAuthGuard.m (runtime swizzle)
       # ════════════════════════════════════════════════════════
-      - name: Add IPCAuthGuard.m to Xcode project (Layer 2 — swizzle backup)
+      - name: Add IPCAuthGuard.m to Xcode project
         if: env.AUTH_ENABLED == 'true'
         run: |
           set -euo pipefail
