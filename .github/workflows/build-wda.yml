@@ -323,12 +323,24 @@ jobs:
           find Payload -name "*.dSYM" -type d -exec rm -rf {} + 2>/dev/null || true
 
           # ══════════════════════════════════════
-          # Strip arm64e slices — giữ arm64 only
-          # Giảm ~50% kích thước dylib + memory footprint
-          # iPhone cũ (iOS 15.x) chỉ cần arm64
+          # Replace heavy Xcode 15.x dylibs with lightweight versions
+          # Xcode 15.3 libXCTestSwiftSupport: 2.5MB (624KB code)
+          # Optimized version:                 878KB (160KB code)
+          # → Giảm 3x memory footprint, tránh nghẽn trên iPhone cũ
           # ══════════════════════════════════════
-          echo "=== Stripping arm64e slices (arm64-only) ==="
-          STRIPPED=0
+          echo "=== Replacing heavy dylibs with optimized versions ==="
+          XCTEST_DYLIB="Payload/WebDriverAgentRunner-Runner.app/Frameworks/libXCTestSwiftSupport.dylib"
+          if [ -f "resources/libXCTestSwiftSupport.dylib" ] && [ -f "$XCTEST_DYLIB" ]; then
+            BEFORE=$(stat -f%z "$XCTEST_DYLIB")
+            cp resources/libXCTestSwiftSupport.dylib "$XCTEST_DYLIB"
+            AFTER=$(stat -f%z "$XCTEST_DYLIB")
+            echo "  libXCTestSwiftSupport.dylib: ${BEFORE} → ${AFTER} bytes (saved $(( (BEFORE - AFTER) / 1024 ))KB)"
+          else
+            echo "  No optimized dylib available, keeping original"
+          fi
+
+          # Strip arm64e slices from remaining FAT binaries
+          echo "=== Stripping arm64e slices ==="
           find Payload -type f | while read f; do
             if file "$f" | grep -q "universal binary"; then
               ARCHS=$(lipo -info "$f" 2>/dev/null | sed 's/.*: //')
@@ -336,12 +348,11 @@ jobs:
                 BEFORE=$(stat -f%z "$f")
                 lipo -thin arm64 "$f" -output "${f}.thin" 2>/dev/null && mv "${f}.thin" "$f"
                 AFTER=$(stat -f%z "$f")
-                SAVED=$(( (BEFORE - AFTER) / 1024 ))
-                echo "  $(basename "$f"): ${BEFORE} → ${AFTER} (saved ${SAVED}KB)"
+                echo "  $(basename "$f"): ${BEFORE} → ${AFTER} (saved $(( (BEFORE - AFTER) / 1024 ))KB)"
               fi
             fi
           done
-          echo "  ✅ arm64e stripping complete"
+          echo "  ✅ Optimization complete"
 
           # ══════════════════════════════════════
           # Patch MH_BUNDLE → MH_DYLIB (Frameworks ONLY)
