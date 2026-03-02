@@ -120,45 +120,15 @@ jobs:
           } >> $GITHUB_ENV
           echo "ROUTE_PREFIX=$ROUTE_PREFIX" >> $GITHUB_ENV
 
-          # Layer 1 (patch_auth.py) đã bị loại bỏ — xung đột với Layer 2
-          # Chỉ dùng Layer 2 (IPCAuthGuard.m swizzle) để tránh double-strip prefix
-          echo "✅ Auth config ready (Layer 2 only)"
+          # Patch auth trực tiếp vào source code RoutingConnection.m (Layer 1)
+          # Đây là cách đáng tin cậy nhất — code chạy inline, không cần swizzle
+          python3 scripts/patch_auth.py WebDriverAgent "$AUTH_KEY" "$ROUTE_PREFIX"
+          echo "✅ Auth patched (Layer 1 — source injection)"
 
-      # ════════════════════════════════════════════════════════
-      # Bước 3: Auth guard — IPCAuthGuard.m (runtime swizzle)
-      # ════════════════════════════════════════════════════════
-      - name: Add IPCAuthGuard.m to Xcode project
-        if: env.AUTH_ENABLED == 'true'
-        run: |
-          set -euo pipefail
-          echo "=== Adding IPCAuthGuard.m (double-layer auth) ==="
-
-          # Tìm thư mục Routing trong WDA source
-          ROUTING_DIR=$(find WebDriverAgent -type d -name "Routing" | head -1)
-          if [ -z "$ROUTING_DIR" ]; then
-            ROUTING_DIR="WebDriverAgent/WebDriverAgentLib/WebDriverAgentLib"
-            echo "  Routing dir not found, using: $ROUTING_DIR"
-          fi
-
-          # Copy IPCAuthGuard.m vào WDA source
-          cp src/IPCAuthGuard.m "$ROUTING_DIR/"
-          echo "  Copied to: $ROUTING_DIR/IPCAuthGuard.m"
-
-          # Replace placeholders với actual keys
-          sed -i '' "s|__IPC_AUTH_KEY__|$AUTH_KEY|g" "$ROUTING_DIR/IPCAuthGuard.m"
-          sed -i '' "s|__IPC_ROUTE_PREFIX__|$ROUTE_PREFIX|g" "$ROUTING_DIR/IPCAuthGuard.m"
-
-          # Verify
-          if grep -q "__IPC_AUTH_KEY__" "$ROUTING_DIR/IPCAuthGuard.m"; then
-            echo "FATAL: Placeholder __IPC_AUTH_KEY__ chưa được thay thế!"
-            exit 1
-          fi
-          echo "  ✅ Placeholders verified"
-
-          # Thêm vào Xcode project
-          gem install xcodeproj
-          ruby scripts/add_to_xcode.rb
-          echo "  ✅ IPCAuthGuard.m added to Xcode project"
+      # Layer 2 (IPCAuthGuard.m swizzle) đã bị loại bỏ:
+      # - Swizzle runtime không đáng tin cậy (có thể không hook được)
+      # - Xung đột với Layer 1 (double-strip prefix)
+      # - Layer 1 source patch đảm bảo 100% chạy
 
       # ════════════════════════════════════════════════════════
       # Bước 4: Build
