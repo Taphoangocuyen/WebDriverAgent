@@ -23,14 +23,14 @@ def patch_file(filepath, auth_key, route_prefix):
         print(f"ERROR: Could not find '{target}' in {filepath}")
         sys.exit(1)
 
-    # Inject auth check right after path = [url path];
-    # If auth fails → change path to /__blocked__ → WDA returns error
-    # No extra imports needed, no custom classes
+    # Inject route prefix check right after path = [url path];
+    # Only requests with correct prefix are allowed through
+    # No header check needed — prefix acts as secret token in URL
     replacement = target + '''
 
-    // ═══ IPC Auth Guard (Layer 1 — source patch) ═══
+    // ═══ IPC Route Guard (source patch) ═══
     {
-      // Whitelist: /status và /health luôn cho phép (health check, không data nhạy cảm)
+      // Whitelist: /status và /health luôn cho phép
       BOOL _ipcIsPublic = [path isEqualToString:@"/status"]
                        || [path hasPrefix:@"/status?"]
                        || [path isEqualToString:@"/health"]
@@ -38,18 +38,14 @@ def patch_file(filepath, auth_key, route_prefix):
       if (!_ipcIsPublic) {
         NSString *_ipcPrefix = @"/''' + route_prefix + '''/";
         if ([path hasPrefix:_ipcPrefix]) {
-          NSString *_ipcAuth = [request headerField:@"X-IPC-Auth"];
-          if (_ipcAuth != nil && [@"''' + auth_key + '''" isEqualToString:_ipcAuth]) {
-            path = [path substringFromIndex:_ipcPrefix.length - 1];
-          } else {
-            path = @"/__ipc_blocked__";
-          }
+          // Strip prefix: /ipc_xxx/session → /session
+          path = [path substringFromIndex:_ipcPrefix.length - 1];
         } else {
           path = @"/__ipc_blocked__";
         }
       }
     }
-    // ═══ End IPC Auth Guard ═══'''
+    // ═══ End IPC Route Guard ═══'''
 
     content = content.replace(target, replacement, 1)
 
