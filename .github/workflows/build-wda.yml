@@ -323,20 +323,32 @@ jobs:
           find Payload -name "*.dSYM" -type d -exec rm -rf {} + 2>/dev/null || true
 
           # ══════════════════════════════════════
-          # Replace heavy Xcode 15.x dylibs with lightweight versions
-          # Xcode 15.3 libXCTestSwiftSupport: 2.5MB (624KB code)
-          # Optimized version:                 878KB (160KB code)
-          # → Giảm 3x memory footprint, tránh nghẽn trên iPhone cũ
+          # Remove extra XCTest frameworks bundled by Xcode 16
+          # iOS 15.x đã có sẵn trên hệ thống — chỉ cần libXCTestSwiftSupport.dylib
+          # Xcode 16 bundle 7 frameworks (~4.4MB) vs Xcode 15 chỉ 1 (~878KB)
           # ══════════════════════════════════════
-          echo "=== Replacing heavy dylibs with optimized versions ==="
-          XCTEST_DYLIB="Payload/WebDriverAgentRunner-Runner.app/Frameworks/libXCTestSwiftSupport.dylib"
+          echo "=== Removing unnecessary Xcode 16 frameworks ==="
+          FRAMEWORKS_DIR="Payload/WebDriverAgentRunner-Runner.app/Frameworks"
+          REMOVED=0
+          for fw in XCTAutomationSupport XCTest XCTestCore XCTestSupport XCUIAutomation XCUnit; do
+            FW_PATH="$FRAMEWORKS_DIR/${fw}.framework"
+            if [ -d "$FW_PATH" ]; then
+              SIZE=$(du -sk "$FW_PATH" | cut -f1)
+              echo "  Removing ${fw}.framework (${SIZE}KB)"
+              rm -rf "$FW_PATH"
+              REMOVED=$((REMOVED + 1))
+            fi
+          done
+          echo "  ✅ Removed $REMOVED extra frameworks"
+
+          # Replace libXCTestSwiftSupport.dylib with lightweight version
+          echo "=== Replacing libXCTestSwiftSupport.dylib ==="
+          XCTEST_DYLIB="$FRAMEWORKS_DIR/libXCTestSwiftSupport.dylib"
           if [ -f "resources/libXCTestSwiftSupport.dylib" ] && [ -f "$XCTEST_DYLIB" ]; then
             BEFORE=$(stat -f%z "$XCTEST_DYLIB")
             cp resources/libXCTestSwiftSupport.dylib "$XCTEST_DYLIB"
             AFTER=$(stat -f%z "$XCTEST_DYLIB")
-            echo "  libXCTestSwiftSupport.dylib: ${BEFORE} → ${AFTER} bytes (saved $(( (BEFORE - AFTER) / 1024 ))KB)"
-          else
-            echo "  No optimized dylib available, keeping original"
+            echo "  ${BEFORE} → ${AFTER} bytes (saved $(( (BEFORE - AFTER) / 1024 ))KB)"
           fi
 
           # Strip arm64e slices from remaining FAT binaries
