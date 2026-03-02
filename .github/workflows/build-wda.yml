@@ -323,6 +323,27 @@ jobs:
           find Payload -name "*.dSYM" -type d -exec rm -rf {} + 2>/dev/null || true
 
           # ══════════════════════════════════════
+          # Strip arm64e slices — giữ arm64 only
+          # Giảm ~50% kích thước dylib + memory footprint
+          # iPhone cũ (iOS 15.x) chỉ cần arm64
+          # ══════════════════════════════════════
+          echo "=== Stripping arm64e slices (arm64-only) ==="
+          STRIPPED=0
+          find Payload -type f | while read f; do
+            if file "$f" | grep -q "universal binary"; then
+              ARCHS=$(lipo -info "$f" 2>/dev/null | sed 's/.*: //')
+              if echo "$ARCHS" | grep -q "arm64e"; then
+                BEFORE=$(stat -f%z "$f")
+                lipo -thin arm64 "$f" -output "${f}.thin" 2>/dev/null && mv "${f}.thin" "$f"
+                AFTER=$(stat -f%z "$f")
+                SAVED=$(( (BEFORE - AFTER) / 1024 ))
+                echo "  $(basename "$f"): ${BEFORE} → ${AFTER} (saved ${SAVED}KB)"
+              fi
+            fi
+          done
+          echo "  ✅ arm64e stripping complete"
+
+          # ══════════════════════════════════════
           # Patch MH_BUNDLE → MH_DYLIB (Frameworks ONLY)
           # QUAN TRỌNG: Hỗ trợ cả FAT binary (universal)
           # KHÔNG patch PlugIns/*.xctest (NSBundle cần MH_BUNDLE)
