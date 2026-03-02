@@ -55,10 +55,10 @@ jobs:
           echo "WDA_TAG=$WDA_TAG" >> $GITHUB_ENV
           echo "WDA_COMMIT=$WDA_COMMIT" >> $GITHUB_ENV
 
-      - name: Setup Xcode
+      - name: Setup Xcode 15 (lightweight build — no extra XCTest frameworks)
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: '15.4'
 
       # ════════════════════════════════════════════════════════
       # Bước 1: Customize WDA (permissions, MinimumOSVersion...)
