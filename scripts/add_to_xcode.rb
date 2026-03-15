@@ -12,20 +12,20 @@ end
 puts "Found target: #{lib_target.name}"
 
 # ═══════════════════════════════════════════════════════
-# Tìm group phù hợp
+# Tìm Commands group (cùng chỗ với FBCustomCommands, FBVideoCommands...)
 # ═══════════════════════════════════════════════════════
 wda_lib_group = project.main_group.find_subpath('WebDriverAgentLib', false)
 if wda_lib_group.nil?
   wda_lib_group = project.main_group.find_subpath('WebDriverAgentLib/WebDriverAgentLib', false)
 end
 
-# FBPhotoCommands → Commands group (cùng chỗ với FBCustomCommands, FBVideoCommands...)
 commands_group = nil
-routing_group = nil
 if wda_lib_group
   commands_group = wda_lib_group.find_subpath('Commands', false)
-  routing_group = wda_lib_group.find_subpath('Routing', false)
 end
+
+photo_group = commands_group || wda_lib_group || project.main_group
+puts "Adding FBPhotoCommands to group: #{photo_group.display_name}"
 
 # ═══════════════════════════════════════════════════════
 # Helper: thêm file vào group + compile sources
@@ -48,17 +48,8 @@ def add_file_to_target(group, filename, target)
 end
 
 # ═══════════════════════════════════════════════════════
-# 1. IPCAuthGuard.m → Routing group
+# FBPhotoCommands (.h + .m) → Commands group
 # ═══════════════════════════════════════════════════════
-auth_group = routing_group || wda_lib_group || project.main_group
-puts "Adding IPCAuthGuard.m to group: #{auth_group.display_name}"
-add_file_to_target(auth_group, 'IPCAuthGuard.m', lib_target)
-
-# ═══════════════════════════════════════════════════════
-# 2. FBPhotoCommands (.h + .m) → Commands group
-# ═══════════════════════════════════════════════════════
-photo_group = commands_group || wda_lib_group || project.main_group
-puts "Adding FBPhotoCommands to group: #{photo_group.display_name}"
 
 # Header file (không cần add to compile sources)
 existing_h = photo_group.files.find { |f| f.path == 'FBPhotoCommands.h' }
