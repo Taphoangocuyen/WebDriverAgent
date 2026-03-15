@@ -2,8 +2,8 @@
  * FBPhotoCommands — Import Photo/Video vào thư viện Ảnh iPhone
  * Custom command cho WebDriverAgent (iPhone Control)
  *
- * POST /wda/importPhoto — raw image bytes → Photos Library
- * POST /wda/importVideo — raw video bytes → Photos Library (temp file)
+ * POST /wda/importPhoto — base64 image data trong JSON body {"value": "..."}
+ * POST /wda/importVideo — base64 video data trong JSON body {"value": "..."}
  */
 
 #import "FBPhotoCommands.h"
@@ -30,14 +30,19 @@
 
 + (id<FBResponsePayload>)handleImportPhoto:(FBRouteRequest *)request
 {
-  NSData *imageData = request.httpBody;
+  NSString *base64String = request.arguments[@"value"];
+  if (nil == base64String || base64String.length == 0) {
+    return FBResponseWithUnknownErrorFormat(@"No image data in request body. Send JSON: {\"value\": \"<base64>\"}");
+  }
+
+  NSData *imageData = [[NSData alloc] initWithBase64EncodedString:base64String options:NSDataBase64DecodingIgnoreUnknownCharacters];
   if (nil == imageData || imageData.length == 0) {
-    return FBResponseWithStatus([FBCommandStatus invalidArgumentErrorWithMessage:@"No image data in request body" traceback:nil]);
+    return FBResponseWithUnknownErrorFormat(@"Cannot decode base64 image data");
   }
 
   UIImage *image = [UIImage imageWithData:imageData];
   if (nil == image) {
-    return FBResponseWithStatus([FBCommandStatus invalidArgumentErrorWithMessage:@"Cannot decode image from data" traceback:nil]);
+    return FBResponseWithUnknownErrorFormat(@"Cannot create image from decoded data");
   }
 
   __block NSError *saveError = nil;
@@ -57,7 +62,7 @@
 
   if (!success) {
     NSString *msg = saveError.localizedDescription ?: @"Unknown error saving photo";
-    return FBResponseWithStatus([FBCommandStatus unknownErrorWithMessage:msg traceback:nil]);
+    return FBResponseWithUnknownErrorFormat(@"Failed to save photo: %@", msg);
   }
 
   return FBResponseWithOK();
@@ -67,9 +72,14 @@
 
 + (id<FBResponsePayload>)handleImportVideo:(FBRouteRequest *)request
 {
-  NSData *videoData = request.httpBody;
+  NSString *base64String = request.arguments[@"value"];
+  if (nil == base64String || base64String.length == 0) {
+    return FBResponseWithUnknownErrorFormat(@"No video data in request body. Send JSON: {\"value\": \"<base64>\"}");
+  }
+
+  NSData *videoData = [[NSData alloc] initWithBase64EncodedString:base64String options:NSDataBase64DecodingIgnoreUnknownCharacters];
   if (nil == videoData || videoData.length == 0) {
-    return FBResponseWithStatus([FBCommandStatus invalidArgumentErrorWithMessage:@"No video data in request body" traceback:nil]);
+    return FBResponseWithUnknownErrorFormat(@"Cannot decode base64 video data");
   }
 
   // Ghi ra temp file (Photos API cần file URL cho video)
@@ -79,7 +89,7 @@
   NSURL *tempURL = [NSURL fileURLWithPath:tempFile];
 
   if (![videoData writeToURL:tempURL atomically:YES]) {
-    return FBResponseWithStatus([FBCommandStatus unknownErrorWithMessage:@"Failed to write temp video file" traceback:nil]);
+    return FBResponseWithUnknownErrorFormat(@"Failed to write temp video file");
   }
 
   __block NSError *saveError = nil;
@@ -92,7 +102,6 @@
   } completionHandler:^(BOOL ok, NSError *error) {
     success = ok;
     saveError = error;
-    // Dọn temp file
     [[NSFileManager defaultManager] removeItemAtURL:tempURL error:nil];
     dispatch_semaphore_signal(semaphore);
   }];
@@ -102,7 +111,7 @@
   if (!success) {
     [[NSFileManager defaultManager] removeItemAtURL:tempURL error:nil];
     NSString *msg = saveError.localizedDescription ?: @"Unknown error saving video";
-    return FBResponseWithStatus([FBCommandStatus unknownErrorWithMessage:msg traceback:nil]);
+    return FBResponseWithUnknownErrorFormat(@"Failed to save video: %@", msg);
   }
 
   return FBResponseWithOK();

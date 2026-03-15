@@ -3,12 +3,12 @@
  * Custom command cho WebDriverAgent (iPhone Control)
  *
  * Routes:
- *   POST /wda/importPhoto — Import ảnh (raw bytes trong body)
- *   POST /wda/importVideo — Import video (raw bytes trong body)
+ *   POST /wda/importPhoto — Import ảnh (base64 trong JSON body)
+ *   POST /wda/importVideo — Import video (base64 trong JSON body)
  */
 
 #import <Foundation/Foundation.h>
-#import <WebDriverAgentLib/FBCommandHandler.h>
+#import "FBCommandHandler.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
