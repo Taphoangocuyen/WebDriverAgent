@@ -94,6 +94,7 @@ PERMISSIONS=(
     "NSLocalNetworkUsageDescription"
     "NSCameraUsageDescription"
     "NSPhotoLibraryUsageDescription"
+    "NSPhotoLibraryAddUsageDescription"
     "NSMicrophoneUsageDescription"
     "NSLocationWhenInUseUsageDescription"
     "NSLocationAlwaysAndWhenInUseUsageDescription"

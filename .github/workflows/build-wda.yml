@@ -80,6 +80,37 @@ jobs:
           bash scripts/customize_wda.sh
 
       # ════════════════════════════════════════════════════════
+      # Bước 1.5: Add FBPhotoCommands (importPhoto/importVideo)
+      # ════════════════════════════════════════════════════════
+      - name: Add FBPhotoCommands to WDA
+        run: |
+          echo "=== Adding FBPhotoCommands (importPhoto/importVideo) ==="
+          COMMANDS_DIR="WebDriverAgent/WebDriverAgentLib/Commands"
+
+          if [ ! -d "$COMMANDS_DIR" ]; then
+            echo "ERROR: Commands dir not found!"
+            find WebDriverAgent -name "FBCustomCommands.m" -type f
+            exit 1
+          fi
+
+          # Copy source files
+          cp src/FBPhotoCommands.h "$COMMANDS_DIR/"
+          cp src/FBPhotoCommands.m "$COMMANDS_DIR/"
+          echo "  Copied FBPhotoCommands.h/.m → $COMMANDS_DIR/"
+
+          # Link Photos.framework vào project
+          python3 scripts/link_photos_framework.py WebDriverAgent
+
+          # Thêm vào Xcode project (compile sources)
+          gem install xcodeproj 2>/dev/null || true
+          ruby scripts/add_to_xcode.rb
+
+          # Verify
+          echo "=== Verify files ==="
+          ls -la "$COMMANDS_DIR/FBPhotoCommands"*
+          echo "  ✅ FBPhotoCommands ready"
+
+      # ════════════════════════════════════════════════════════
       # Bước 2: Setup auth config (validate key, set env vars)
       # ════════════════════════════════════════════════════════
       - name: Setup auth configuration
@@ -272,6 +303,8 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string '$PERM_TEXT'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryUsageDescription '$PERM_TEXT'" "$PLIST" 2>/dev/null || \
           /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string '$PERM_TEXT'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryAddUsageDescription '$PERM_TEXT'" "$PLIST" 2>/dev/null || \
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryAddUsageDescription string '$PERM_TEXT'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription '$PERM_TEXT'" "$PLIST" 2>/dev/null || \
           /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string '$PERM_TEXT'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Set :NSLocationWhenInUseUsageDescription '$PERM_TEXT'" "$PLIST" 2>/dev/null || \
