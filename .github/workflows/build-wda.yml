@@ -500,9 +500,8 @@ jobs:
           # ══════════════════════════════════════
           if [ "$AUTH_ENABLED" = "true" ]; then
             echo ""
-            echo "🔐 Auth: ENABLED (double-layer)"
-            echo "  Layer 1: patch_auth.py (source injection)"
-            echo "  Layer 2: IPCAuthGuard.m (swizzle backup)"
+            echo "🔐 Auth: ENABLED"
+            echo "  Layer 1: patch_auth.py (source injection into RoutingConnection.m)"
           else
             echo ""
             echo "⚠️ Auth: DISABLED (no auth key provided)"
