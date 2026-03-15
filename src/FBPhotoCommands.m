@@ -10,6 +10,7 @@
 #import "FBRoute.h"
 #import "FBRouteRequest.h"
 #import "FBResponsePayload.h"
+#import <UIKit/UIKit.h>
 #import <Photos/Photos.h>
 
 @implementation FBPhotoCommands
