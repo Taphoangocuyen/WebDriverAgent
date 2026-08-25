@@ -173,8 +173,20 @@ static NSString *FBPhotoAddPermissionError(void)
 
   // Ghi ra temp file (Photos API cần file URL cho video)
   NSString *tempDir = NSTemporaryDirectory();
+  // Đuôi file tạm phải khớp định dạng THẬT. Photos xét cả nội dung lẫn đuôi;
+  // ghi một file MOV/M4V thành .mp4 thì có máy nhận, có máy trả lỗi. App gửi
+  // kèm "extension"; chỉ nhận danh sách trắng để đuôi không thành đường chèn
+  // ký tự vào tên file tạm. Không gửi thì vẫn mặc định mp4 như trước.
+  NSString *ext = @"mp4";
+  id reqExt = request.arguments[@"extension"];
+  if ([reqExt isKindOfClass:[NSString class]]) {
+    NSString *low = [(NSString *)reqExt lowercaseString];
+    if ([@[@"mp4", @"mov", @"m4v"] containsObject:low]) {
+      ext = low;
+    }
+  }
   NSString *tempFile = [tempDir stringByAppendingPathComponent:
-    [NSString stringWithFormat:@"tempVideo_%@.mp4", [[NSUUID UUID] UUIDString]]];
+    [NSString stringWithFormat:@"tempVideo_%@.%@", [[NSUUID UUID] UUIDString], ext]];
   NSURL *tempURL = [NSURL fileURLWithPath:tempFile];
 
   if (![videoData writeToURL:tempURL atomically:YES]) {
@@ -195,10 +207,10 @@ static NSString *FBPhotoAddPermissionError(void)
     dispatch_semaphore_signal(semaphore);
   }];
 
-  if (0 != dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, 60 * NSEC_PER_SEC))) {
+  if (0 != dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, 120 * NSEC_PER_SEC))) {
     [[NSFileManager defaultManager] removeItemAtURL:tempURL error:nil];
     return FBResponseWithUnknownErrorFormat(
-      @"Timed out after 60 s while Photos saved the video. Permission was already granted, so this is not a permission problem.");
+      @"Timed out after 120 s while Photos saved the video. Permission was already granted, so this is not a permission problem.");
   }
 
   if (!success) {

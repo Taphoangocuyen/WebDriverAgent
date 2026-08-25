@@ -61,5 +61,44 @@ end
 # Implementation file (cần compile)
 add_file_to_target(photo_group, 'FBPhotoCommands.m', lib_target)
 
+
+# ════════════════════════════════════════
+# Photos.framework → target WebDriverAgentLib
+# ════════════════════════════════════════
+# Trước đây việc này do scripts/link_photos_framework.py làm bằng regex trên
+# project.pbxproj. Hai chỗ yếu của cách đó:
+#   - Chỉ kiểm chuỗi "Photos.framework" có xuất hiện ở BẤT KỲ đâu trong file
+#     rồi bỏ qua. Nếu upstream nhắc tới nó ở target khác thì WebDriverAgentLib
+#     không bao giờ được link.
+#   - Khi thêm thì thêm vào MỌI frameworks build phase khớp regex, không riêng
+#     WebDriverAgentLib.
+# Ở đây đã có đối tượng target thật nên link thẳng, và kiểm cũng thẳng.
+already_linked = lib_target.frameworks_build_phase.files.any? do |bf|
+  bf.file_ref && bf.file_ref.path.to_s.end_with?('Photos.framework')
+end
+
+if already_linked
+  puts "Photos.framework already linked to #{lib_target.name}, skipping"
+else
+  photos_ref = project.frameworks_group.files.find { |f| f.path.to_s.end_with?('Photos.framework') }
+  if photos_ref.nil?
+    photos_ref = project.frameworks_group.new_file('System/Library/Frameworks/Photos.framework')
+    photos_ref.source_tree = 'SDKROOT'
+    puts "Created file reference: #{photos_ref.path}"
+  end
+  lib_target.frameworks_build_phase.add_file_reference(photos_ref)
+  puts "Linked Photos.framework to #{lib_target.name}"
+end
+
+# Kiểm lại từ chính cây đối tượng — nếu hụt thì dừng NGAY ở bước tạo project,
+# đỡ phải chờ build xong mới biết ở bước verify.
+linked_now = lib_target.frameworks_build_phase.files.any? do |bf|
+  bf.file_ref && bf.file_ref.path.to_s.end_with?('Photos.framework')
+end
+unless linked_now
+  puts "ERROR: Photos.framework vẫn chưa nằm trong frameworks build phase của #{lib_target.name}"
+  exit 1
+end
+
 project.save
 puts "Xcode project updated successfully"

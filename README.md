@@ -54,36 +54,42 @@ Nếu muốn bảo vệ WDA bằng IPC auth:
 
 ```
 ├── .github/workflows/build-wda.yml    ← Workflow chính (GitHub Actions)
-├── src/IPCAuthGuard.m                 ← Auth guard Layer 2 (swizzle backup)
+├── src/
+│   ├── FBPhotoCommands.h/.m           ← Route /wda/importPhoto, /wda/importVideo
+│   └── IPCAuthGuard.m                 ← KHÔNG còn dùng (xem mục Bảo mật)
 ├── scripts/
-│   ├── patch_auth.py                  ← Auth guard Layer 1 (source patch)
-│   ├── customize_wda.sh               ← Tuỳ chỉnh WDA (permissions, MinOS...)
-│   └── add_to_xcode.rb               ← Thêm IPCAuthGuard.m vào Xcode project
+│   ├── patch_auth.py                  ← Vá auth vào RoutingConnection.m
+│   ├── add_photo_commands.sh          ← Chép FBPhotoCommands vào cây WDA
+│   ├── add_to_xcode.rb                ← Thêm FBPhotoCommands + link Photos.framework
+│   └── customize_wda.sh               ← Tên hiển thị, quyền, MinOS...
 ├── resources/
 │   ├── entitlements.plist             ← TrollStore entitlements
-│   └── icon.png                       ← App icon
+│   ├── icon.png                       ← App icon
+│   └── libXCTestSwiftSupport.dylib    ← Bản nhẹ, thay bản nặng của Xcode
 └── README.md
 ```
 
-## Bảo mật — Double-Layer Auth
+## Bảo mật — Auth một lớp (source patch)
 
-Khi build với `auth_key`, WDA được bảo vệ 2 lớp:
+`auth_key` là **bắt buộc**. Không truyền vào ô nhập thì workflow lấy repository
+secret `IPC_AUTH_KEY`; không có cả hai thì build dừng. Key ngắn hơn 16 ký tự
+cũng bị từ chối.
 
-**Layer 1 — Source Patch** (`patch_auth.py`):
-- Inject auth check trực tiếp vào `RoutingConnection.m`
+**Source Patch** (`patch_auth.py`) — vá thẳng vào `RoutingConnection.m`:
 - Request phải có route prefix: `/ipc_XXXXXXXX/session` (thay vì `/session`)
 - Request phải có header: `X-IPC-Auth: <key>`
 - Không đúng → WDA trả "unknown command"
 
-**Layer 2 — Swizzle Backup** (`IPCAuthGuard.m`):
-- Hook `httpResponseForMethod:URI:` qua method swizzling
-- Kiểm tra route prefix + auth header
-- Trả HTTP 403 nếu không hợp lệ
-- Backup nếu Layer 1 bị bypass
-
 **Whitelist** (không cần auth):
 - `/status` — health check cơ bản
 - `/health` — health check bổ sung
+
+> **Layer 2 (swizzle) đã bị bỏ.** Trước đây `src/IPCAuthGuard.m` hook
+> `httpResponseForMethod:URI:` làm lớp dự phòng. Nó không còn được thêm vào
+> Xcode project nữa (xem `scripts/add_to_xcode.rb`) — file còn nằm trong repo
+> nhưng **không được biên dịch**. Lý do bỏ: source patch chạy inline nên không
+> có đường vòng để bypass, còn swizzle thì phụ thuộc thứ tự nạp và từng làm
+> build gãy. Đừng dựa vào nó.
 
 ## Yêu cầu iPhone
 

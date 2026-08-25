@@ -109,8 +109,9 @@ jobs:
           cp src/FBPhotoCommands.m "$COMMANDS_DIR/"
           echo "  Copied FBPhotoCommands.h/.m → $COMMANDS_DIR/"
 
-          # Link Photos.framework vào project
-          python3 scripts/link_photos_framework.py WebDriverAgent
+          # Photos.framework duoc link trong scripts/add_to_xcode.rb (gem xcodeproj,
+          # target WebDriverAgentLib tuong minh). Truoc day co scripts/link_photos_framework.py
+          # lam bang regex tren project.pbxproj — da bo vi khong nham dung target.
 
           # Thêm vào Xcode project (compile sources)
           gem install xcodeproj 2>/dev/null || true
