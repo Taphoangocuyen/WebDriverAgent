@@ -7,7 +7,7 @@ Build WebDriverAgent IPA cho **TrollStore** — nhấn icon trên iPhone là WDA
 - Build trên cloud (GitHub Actions) — không cần Mac
 - Cài qua TrollStore — không cần Apple cert, không cần ký
 - Nhấn icon trên iPhone → WDA tự khởi động
-- Double-layer IPC auth guard (route prefix + auth header)
+- IPC auth guard: route prefix + header `X-IPC-Auth` (vá thẳng vào source)
 - Tuỳ chỉnh tên, icon, Bundle ID, Min iOS version
 
 ## Hướng dẫn
@@ -26,12 +26,14 @@ git remote add origin https://github.com/YOUR_USERNAME/wda-builder.git
 git push -u origin main
 ```
 
-### Bước 2: Cài Auth Key (tuỳ chọn)
+### Bước 2: Cài Auth Key (BẮT BUỘC)
 
-Nếu muốn bảo vệ WDA bằng IPC auth:
+Không có key thì workflow **dừng**, không build. Key ngắn hơn 16 ký tự cũng bị
+từ chối. Key này phải **trùng** với `.auth_key` của app desktop, nếu không app
+sẽ không gọi được WDA.
 
 1. Repo → **Settings** → **Secrets and variables** → **Actions**
-2. Thêm secret `IPC_AUTH_KEY` với key bất kỳ (32+ ký tự)
+2. Thêm secret `IPC_AUTH_KEY` (32+ ký tự)
 
 ### Bước 3: Chạy Build
 
@@ -39,8 +41,12 @@ Nếu muốn bảo vệ WDA bằng IPC auth:
 2. **Run workflow** → tuỳ chỉnh:
    - `bundle_id`: Bundle ID (mặc định: `com.facebook.WebDriverAgentRunner`)
    - `display_name`: Tên hiển thị (mặc định: `DrakoCtrl`)
-   - `auth_key`: Auth key (hoặc để trống nếu dùng secret)
+   - `ipa_filename`: Tên file IPA xuất ra (mặc định: `DrakoCtrl`)
+   - `auth_key`: để trống thì lấy secret `IPC_AUTH_KEY`
    - `min_ios_version`: iOS tối thiểu (mặc định: `15.0`)
+   - `wda_version`: **giữ nguyên `v11.4.0`**. Để trống sẽ lấy bản mới nhất
+     (≥ v16.7.0 đã gỡ RoutingHTTPServer → `patch_auth.py` fail). Ghim
+     `v11.4.1` thì build được nhưng điều khiển kém mượt.
 3. Nhấn **Run** → đợi ~15 phút
 
 ### Bước 4: Cài lên iPhone qua TrollStore
