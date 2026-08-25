@@ -532,8 +532,18 @@ jobs:
       # Bước 6: Verify IPA
       # ════════════════════════════════════════════════════════
       - name: Verify IPA
+        # Moi gia tri ${{ }} di qua khoi env: nay, KHONG noi suy thang vao shell.
+        # Ly do: ${{ }} duoc thay TRUOC khi shell chay, nen input cua nguoi dung
+        # (display_name, ipa_filename...) co the chen lenh. Qua env: thi chung chi
+        # la du lieu. Cac bien AUTH_ENABLED / ROUTE_PREFIX / WDA_TAG / WDA_COMMIT
+        # da la bien moi truong that (buoc truoc ghi vao $GITHUB_ENV) nen dung thang.
+        env:
+          IPA_NAME: ${{ github.event.inputs.ipa_filename }}
+          WANT_NAME: ${{ github.event.inputs.display_name }}
+          WANT_BUNDLE: ${{ github.event.inputs.bundle_id }}
+          WANT_VER: ${{ github.event.inputs.wda_version }}
+          MIN_IOS: ${{ github.event.inputs.min_ios_version }}
         run: |
-          IPA_NAME="${{ github.event.inputs.ipa_filename }}"
           IPA="${IPA_NAME}.ipa"
           echo "=== Verifying ${IPA} ==="
           echo ""
@@ -570,12 +580,11 @@ jobs:
           PL="$APP/Info.plist"
           plget() { plutil -extract "$1" raw -o - "$PL" 2>/dev/null || echo ""; }
 
-          WANT_NAME="${{ github.event.inputs.display_name }}"
           GOT_NAME="$(plget CFBundleDisplayName)"
           if [ "$GOT_NAME" = "$WANT_NAME" ]; then ok "Ten hien thi = $GOT_NAME"
           else bad "Ten hien thi = '$GOT_NAME', mong doi '$WANT_NAME'"; fi
 
-          WANT_ID="${{ github.event.inputs.bundle_id }}.xctrunner"
+          WANT_ID="${WANT_BUNDLE}.xctrunner"
           GOT_ID="$(plget CFBundleIdentifier)"
           if [ "$GOT_ID" = "$WANT_ID" ]; then ok "Bundle ID = $GOT_ID"
           else bad "Bundle ID = '$GOT_ID', mong doi '$WANT_ID'"; fi
@@ -605,24 +614,26 @@ jobs:
 
           # ─── 5. Auth (Layer 1 — source patch vao RoutingConnection.m) ───
           # ROUTE_PREFIX khong phai bi mat: no nam san trong IPA phat hanh.
-          if [ "${{ env.AUTH_ENABLED }}" = "true" ]; then
+          if [ "$AUTH_ENABLED" = "true" ]; then
             if has "$LIB" "X-IPC-Auth"; then ok "Co header X-IPC-Auth"
             else bad "THIEU X-IPC-Auth — patch_auth.py khong an vao binary"; fi
-            if has "$LIB" "${{ env.ROUTE_PREFIX }}"; then ok "Co route prefix ${{ env.ROUTE_PREFIX }}"
-            else bad "THIEU route prefix ${{ env.ROUTE_PREFIX }}"; fi
+            if [ -z "$ROUTE_PREFIX" ]; then
+              bad "ROUTE_PREFIX rong — buoc auth khong truyen duoc bien sang day"
+            elif has "$LIB" "$ROUTE_PREFIX"; then ok "Co route prefix $ROUTE_PREFIX"
+            else bad "THIEU route prefix $ROUTE_PREFIX"; fi
           else
-            bad "AUTH_ENABLED != true — IPA khong co auth, app desktop se khong goi duoc"
+            bad "AUTH_ENABLED != true (='$AUTH_ENABLED') — IPA khong co auth"
           fi
 
           # ─── 6. Dung phien ban WDA da yeu cau ───
-          WANT_VER="${{ github.event.inputs.wda_version }}"
-          GOT_VER="${{ env.WDA_TAG }}"
           if [ -z "$WANT_VER" ]; then
             bad "wda_version de trong — phai ghim (xem chu thich dau file)"
-          elif [ "$GOT_VER" = "$WANT_VER" ]; then
-            ok "WDA = $GOT_VER (dung ban da ghim)"
+          elif [ -z "$WDA_TAG" ]; then
+            bad "WDA_TAG rong — buoc clone khong truyen duoc bien sang day"
+          elif [ "$WDA_TAG" = "$WANT_VER" ]; then
+            ok "WDA = $WDA_TAG (dung ban da ghim)"
           else
-            bad "WDA = '$GOT_VER' nhung yeu cau '$WANT_VER'"
+            bad "WDA = '$WDA_TAG' nhung yeu cau '$WANT_VER'"
           fi
 
           # Dau hieu cua WDA >= v11.4.1 trong vung screenshot/MJPEG.
@@ -641,9 +652,9 @@ jobs:
           echo "  IPA          : $IPA (${IPA_SIZE_MB} MB)"
           echo "  Display Name : $GOT_NAME"
           echo "  Bundle ID    : $GOT_ID"
-          echo "  Min iOS      : ${{ github.event.inputs.min_ios_version }}"
-          echo "  WDA          : ${{ env.WDA_TAG }} (${{ env.WDA_COMMIT }})"
-          echo "  Auth         : ${{ env.AUTH_ENABLED }}"
+          echo "  Min iOS      : $MIN_IOS"
+          echo "  WDA          : $WDA_TAG ($WDA_COMMIT)"
+          echo "  Auth         : $AUTH_ENABLED"
           echo "============================================="
 
           if [ "$FAIL" -ne 0 ]; then
