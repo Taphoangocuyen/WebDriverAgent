@@ -610,7 +610,7 @@ jobs:
           if otool -L "$LIB" 2>/dev/null | grep -q "Photos.framework"; then
             ok "Da link Photos.framework"
           else
-            bad "CHUA link Photos.framework — link_photos_framework.py bo qua?"
+            bad "CHUA link Photos.framework — add_to_xcode.rb khong link duoc vao WebDriverAgentLib?"
           fi
 
           # ─── 5. Auth (Layer 1 — source patch vao RoutingConnection.m) ───
