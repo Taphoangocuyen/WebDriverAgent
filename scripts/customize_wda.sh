@@ -3,7 +3,7 @@
 # customize_wda.sh - Tuỳ chỉnh WebDriverAgent trước khi build
 # ============================================================
 
-DISPLAY_NAME="${DISPLAY_NAME:-iPhone-Control}"
+DISPLAY_NAME="${DISPLAY_NAME:-DrakoCtrl}"
 BUNDLE_PREFIX="${BUNDLE_PREFIX:-com.facebook}"
 MIN_IOS="${MIN_IOS:-15.0}"
 

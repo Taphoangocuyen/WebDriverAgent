@@ -1,4 +1,4 @@
-# iPhone Control — WDA Builder
+# DrakoCtrl — WDA Builder
 
 Build WebDriverAgent IPA cho **TrollStore** — nhấn icon trên iPhone là WDA tự khởi động.
 
@@ -35,17 +35,17 @@ Nếu muốn bảo vệ WDA bằng IPC auth:
 
 ### Bước 3: Chạy Build
 
-1. Repo → Tab **Actions** → **Build iPhoneControl WDA for TrollStore**
+1. Repo → Tab **Actions** → **Build DrakoCtrl WDA for TrollStore**
 2. **Run workflow** → tuỳ chỉnh:
    - `bundle_id`: Bundle ID (mặc định: `com.facebook.WebDriverAgentRunner`)
-   - `display_name`: Tên hiển thị (mặc định: `iPhone-Control`)
+   - `display_name`: Tên hiển thị (mặc định: `DrakoCtrl`)
    - `auth_key`: Auth key (hoặc để trống nếu dùng secret)
    - `min_ios_version`: iOS tối thiểu (mặc định: `15.0`)
 3. Nhấn **Run** → đợi ~15 phút
 
 ### Bước 4: Cài lên iPhone qua TrollStore
 
-1. Tải `iPhoneControl.ipa` từ **Artifacts**
+1. Tải `DrakoCtrl.ipa` từ **Artifacts**
 2. Chuyển IPA sang iPhone (AirDrop, Safari, USB...)
 3. Mở bằng **TrollStore** → nhấn **Install**
 4. Nhấn icon app → WDA tự khởi động!

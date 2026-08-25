@@ -1,6 +1,6 @@
 /**
  * FBPhotoCommands — Import Photo/Video vào thư viện Ảnh iPhone
- * Custom command cho WebDriverAgent (iPhone Control)
+ * Custom command cho WebDriverAgent (DrakoCtrl)
  *
  * Routes:
  *   POST /wda/importPhoto — Import ảnh (base64 trong JSON body)

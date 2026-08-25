@@ -1,4 +1,4 @@
-// IPCAuthGuard.m — iPhone Control WDA Auth Guard
+// IPCAuthGuard.m — DrakoCtrl WDA Auth Guard
 //
 // Dylib tự động hook vào WDA HTTP server qua +load.
 // Swizzle RoutingConnection.httpResponseForMethod:URI:

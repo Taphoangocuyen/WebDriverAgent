@@ -1,4 +1,4 @@
-name: Build iPhoneControl WDA for TrollStore
+name: Build DrakoCtrl WDA for TrollStore
 
 on:
   workflow_dispatch:
@@ -10,11 +10,11 @@ on:
       display_name:
         description: 'App display name'
         required: false
-        default: 'iPhone Control'
+        default: 'DrakoCtrl'
       ipa_filename:
         description: 'Output IPA filename (without .ipa)'
         required: false
-        default: 'iPhoneControl'
+        default: 'DrakoCtrl'
       auth_key:
         description: 'IPC Auth Key (leave empty to use repository secret IPC_AUTH_KEY)'
         required: false
@@ -24,9 +24,20 @@ on:
         required: false
         default: '15.0'
       wda_version:
-        description: 'WDA version (tag, branch, or commit SHA). Leave empty for latest.'
+        # GHIM v11.4.0 — KHONG de trong.
+        #
+        # IPA dang chay tot duoc dung 2026-03-16, khi `wda_version` con de trong.
+        # Hom do HEAD cua appium/WebDriverAgent la 28e2475356 = release 11.4.0.
+        #
+        # De trong BAY GIO se lay latest (>= v16.7.0), ma tu v16.7.0 appium da GO
+        # vendored RoutingHTTPServer -> scripts/patch_auth.py khong tim thay
+        # RoutingConnection.m -> build FAIL.
+        #
+        # Ghim v11.4.1 cung KHONG duoc: ban do doi vung screenshot/MJPEG
+        # (them consecutiveScreenshotFailures) lam dieu khien kem muot.
+        description: 'WDA version (tag/branch/SHA). GHIM v11.4.0 — de trong se FAIL, v11.4.1 kem muot.'
         required: false
-        default: ''
+        default: 'v11.4.0'
 
 jobs:
   build:
