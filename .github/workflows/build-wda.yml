@@ -534,35 +534,125 @@ jobs:
       - name: Verify IPA
         run: |
           IPA_NAME="${{ github.event.inputs.ipa_filename }}"
-          echo "=== Verifying ${IPA_NAME}.ipa ==="
+          IPA="${IPA_NAME}.ipa"
+          echo "=== Verifying ${IPA} ==="
+          echo ""
 
-          IPA_SIZE=$(stat -f%z "${IPA_NAME}.ipa" 2>/dev/null || stat --format=%s "${IPA_NAME}.ipa")
+          # Kiem HET moi muc roi moi thoat, de mot lan chay chi ra duoc TAT CA cho hong.
+          FAIL=0
+          ok()  { echo "  OK    $1"; }
+          bad() { echo "  FAIL  $1"; FAIL=1; }
+          has() { LC_ALL=C grep -qa -- "$2" "$1" 2>/dev/null; }
+
+          # ─── 1. Vo ngoai ───
+          IPA_SIZE=$(stat -f%z "$IPA" 2>/dev/null || stat --format=%s "$IPA")
           IPA_SIZE_MB=$(echo "scale=1; $IPA_SIZE / 1048576" | bc)
-          echo "  Size: ${IPA_SIZE_MB} MB"
+          if [ "$IPA_SIZE" -ge 1000000 ]; then ok "Kich thuoc ${IPA_SIZE_MB} MB"
+          else bad "IPA qua nho ($IPA_SIZE bytes)"; fi
+          if unzip -t "$IPA" >/dev/null 2>&1; then ok "Zip nguyen ven"
+          else bad "Zip bi hong"; fi
 
-          if [ "$IPA_SIZE" -lt 1000000 ]; then
-            echo "ERROR: IPA quá nhỏ ($IPA_SIZE bytes)!"
+          # ─── 2. Giai nen de soi RUOT, khong chi soi vo ───
+          rm -rf _verify && mkdir -p _verify
+          unzip -q "$IPA" -d _verify || { echo "FATAL: khong giai nen duoc"; exit 1; }
+          APP="_verify/Payload/WebDriverAgentRunner-Runner.app"
+          LIB="$APP/PlugIns/WebDriverAgentRunner.xctest/Frameworks/WebDriverAgentLib.framework/WebDriverAgentLib"
+
+          if [ -f "$APP/WebDriverAgentRunner-Runner" ]; then ok "Co binary chinh"
+          else bad "Thieu binary chinh"; fi
+          if [ ! -f "$LIB" ]; then
+            bad "Thieu WebDriverAgentLib — khong the kiem tiep"
             exit 1
           fi
+          ok "Co WebDriverAgentLib"
 
-          unzip -t "${IPA_NAME}.ipa" > /dev/null 2>&1 || { echo "ERROR: IPA zip bị hỏng!"; exit 1; }
+          # ─── 3. Info.plist ───
+          PL="$APP/Info.plist"
+          plget() { plutil -extract "$1" raw -o - "$PL" 2>/dev/null || echo ""; }
 
-          unzip -l "${IPA_NAME}.ipa" | grep -q "WebDriverAgentRunner-Runner$" || {
-            echo "ERROR: Binary chính không tìm thấy!"
-            exit 1
-          }
+          WANT_NAME="${{ github.event.inputs.display_name }}"
+          GOT_NAME="$(plget CFBundleDisplayName)"
+          if [ "$GOT_NAME" = "$WANT_NAME" ]; then ok "Ten hien thi = $GOT_NAME"
+          else bad "Ten hien thi = '$GOT_NAME', mong doi '$WANT_NAME'"; fi
+
+          WANT_ID="${{ github.event.inputs.bundle_id }}.xctrunner"
+          GOT_ID="$(plget CFBundleIdentifier)"
+          if [ "$GOT_ID" = "$WANT_ID" ]; then ok "Bundle ID = $GOT_ID"
+          else bad "Bundle ID = '$GOT_ID', mong doi '$WANT_ID'"; fi
+
+          # Quyen GHI vao thu vien anh. Thieu no thi nhap anh/video hong tren may that,
+          # ma IPA van chay va van dieu khien duoc -> rat de lot neu khong kiem o day.
+          if [ -n "$(plget NSPhotoLibraryAddUsageDescription)" ]; then
+            ok "Co NSPhotoLibraryAddUsageDescription"
+          else
+            bad "THIEU NSPhotoLibraryAddUsageDescription — nhap anh/video se hong"
+          fi
+
+          # ─── 4. Ma tuy bien cua repo NAY (khong co trong appium goc) ───
+          # 2026-08-25: mot ban IPA build tu nham repo builder da di qua buoc verify cu
+          # va ra mau xanh, du thieu ca hai route duoi day. Do la ly do co muc kiem nay.
+          for R in importPhoto importVideo; do
+            if has "$LIB" "$R"; then ok "Co route /wda/$R"
+            else bad "THIEU route /wda/$R — build tu nham nguon?"; fi
+          done
+
+          # Photos.framework phai duoc LINK that, khong chi co ma nguon goi toi no
+          if otool -L "$LIB" 2>/dev/null | grep -q "Photos.framework"; then
+            ok "Da link Photos.framework"
+          else
+            bad "CHUA link Photos.framework — link_photos_framework.py bo qua?"
+          fi
+
+          # ─── 5. Auth (Layer 1 — source patch vao RoutingConnection.m) ───
+          # ROUTE_PREFIX khong phai bi mat: no nam san trong IPA phat hanh.
+          if [ "${{ env.AUTH_ENABLED }}" = "true" ]; then
+            if has "$LIB" "X-IPC-Auth"; then ok "Co header X-IPC-Auth"
+            else bad "THIEU X-IPC-Auth — patch_auth.py khong an vao binary"; fi
+            if has "$LIB" "${{ env.ROUTE_PREFIX }}"; then ok "Co route prefix ${{ env.ROUTE_PREFIX }}"
+            else bad "THIEU route prefix ${{ env.ROUTE_PREFIX }}"; fi
+          else
+            bad "AUTH_ENABLED != true — IPA khong co auth, app desktop se khong goi duoc"
+          fi
+
+          # ─── 6. Dung phien ban WDA da yeu cau ───
+          WANT_VER="${{ github.event.inputs.wda_version }}"
+          GOT_VER="${{ env.WDA_TAG }}"
+          if [ -z "$WANT_VER" ]; then
+            bad "wda_version de trong — phai ghim (xem chu thich dau file)"
+          elif [ "$GOT_VER" = "$WANT_VER" ]; then
+            ok "WDA = $GOT_VER (dung ban da ghim)"
+          else
+            bad "WDA = '$GOT_VER' nhung yeu cau '$WANT_VER'"
+          fi
+
+          # Dau hieu cua WDA >= v11.4.1 trong vung screenshot/MJPEG.
+          if has "$LIB" "consecutiveScreenshotFailures"; then
+            echo "  CANH BAO  Thay 'consecutiveScreenshotFailures' — ma cua WDA >= v11.4.1."
+            echo "            Ban do da duoc kiem chung la lam dieu khien KEM MUOT."
+            echo "            Ban chay tot la v11.4.0."
+          else
+            ok "Khong co ma screenshot cua v11.4.1"
+          fi
+
+          rm -rf _verify
 
           echo ""
-          echo "╔══════════════════════════════════════╗"
-          echo "║     BUILD SUMMARY                    ║"
-          echo "╠══════════════════════════════════════╣"
-          echo "  IPA: ${IPA_NAME}.ipa (${IPA_SIZE_MB} MB)"
-          echo "  Display Name: ${{ github.event.inputs.display_name }}"
-          echo "  Bundle ID: ${{ github.event.inputs.bundle_id }}"
-          echo "  Min iOS: ${{ github.event.inputs.min_ios_version }}"
-          echo "  WDA: ${{ env.WDA_TAG }} (${{ env.WDA_COMMIT }})"
-          echo "  Auth: ${{ env.AUTH_ENABLED }}"
-          echo "╚══════════════════════════════════════╝"
+          echo "=============== BUILD SUMMARY ==============="
+          echo "  IPA          : $IPA (${IPA_SIZE_MB} MB)"
+          echo "  Display Name : $GOT_NAME"
+          echo "  Bundle ID    : $GOT_ID"
+          echo "  Min iOS      : ${{ github.event.inputs.min_ios_version }}"
+          echo "  WDA          : ${{ env.WDA_TAG }} (${{ env.WDA_COMMIT }})"
+          echo "  Auth         : ${{ env.AUTH_ENABLED }}"
+          echo "============================================="
+
+          if [ "$FAIL" -ne 0 ]; then
+            echo ""
+            echo "VERIFY THAT BAI — DUNG dung IPA nay. Xem cac dong FAIL o tren."
+            exit 1
+          fi
+          echo ""
+          echo "Verify dat toan bo."
 
       # ════════════════════════════════════════════════════════
       # Upload artifact
