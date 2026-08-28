@@ -50,7 +50,7 @@ end
 # ═══════════════════════════════════════════════════════
 # Lệnh tuỳ biến của repo này (.h + .m) → Commands group
 #   FBPhotoCommands — /wda/importPhoto, /wda/importVideo
-#   FBPasteCommands — /wda/paste, /wda/setClipboard
+#   FBPasteCommands — /wda/setClipboard, /wda/pasteOnly, /wda/paste
 # ═══════════════════════════════════════════════════════
 %w[FBPhotoCommands FBPasteCommands].each do |base|
   # Header: chỉ cần nằm trong group, KHÔNG đưa vào compile sources

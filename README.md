@@ -89,58 +89,97 @@ POST /wda/importPhoto   {"value": "<base64 ảnh>"}
 POST /wda/importVideo   {"value": "<base64 video>", "extension": "mp4|mov|m4v"}
 ```
 
-### Dán chữ — `/wda/paste`
+### Dán chữ
 
 WDA gốc có sẵn `/wda/setPasteboard`, nhưng nó **chỉ ghi bảng dán**: chữ nằm
-trong bộ nhớ tạm chứ không vào ô nhập. `/wda/paste` làm nốt cú dán trên máy.
+trong bộ nhớ tạm chứ không vào ô nhập. Repo này bổ sung phần dán thật.
 
-Đáng làm vì `/wda/keys` gõ **từng ký tự** qua bàn phím iOS (~24ms/ký tự đo trên
-máy thật, tức 1.000 ký tự ≈ 24 giây và giữ máy bận suốt quãng đó). Đường bảng
-dán tốn thời gian như nhau bất kể chữ dài bao nhiêu.
+Đáng làm vì `/wda/keys` gõ **từng ký tự** qua bàn phím iOS. Đo trên máy thật:
+
+| | 350 ký tự |
+|---|---|
+| `/wda/keys` (gõ từng ký tự) | ~9.000ms |
+| Đường bảng dán (3 nhịp dưới đây) | **206ms** |
+
+#### Luồng ba nhịp — đây là cách dùng đúng
+
+**iOS CHẶN ghi bảng dán khi WDA chạy nền** (đo trên iOS 15.8). Mà trong luồng
+thật, đúng lúc cần dán thì WDA luôn đã về nền. Nên phải tách làm ba nhịp, bên
+gọi tự lo việc chuyển app:
 
 ```
-POST /wda/paste
+đưa WDA lên tiền cảnh          142ms
+POST /wda/setClipboard          43ms
+về app đích                     21ms
+POST /wda/pasteOnly
+```
+
+Bàn phím của app đích **vẫn còn** sau khi quay lại, nên ô nhập không mất tiêu điểm.
+
+```
+POST /wda/setClipboard
+{"value": "<chữ cần dán>"}          // chuỗi UTF-8 thẳng, không base64
+
+POST /wda/pasteOnly
 {
-  "value":       "<chữ cần dán>",       // bắt buộc, chuỗi UTF-8 thẳng (không base64)
-  "strategy":    "auto",                 // auto | cmdv | menu | clipboard
-  "verify":      true,                   // đọc lại ô nhập để xác nhận chữ đã vào
-  "timeout":     3.0,                    // giây chờ mục "Dán" hiện ra
-  "pasteLabels": ["Dán", "Paste"]        // cộng thêm nhãn, không thay danh sách mặc định
+  "strategy":    "auto",             // auto | cmdv | menu
+  "verify":      true,               // đọc lại ô nhập để xác nhận chữ đã vào
+  "timeout":     3.0,                // giây chờ mục "Dán" hiện ra
+  "pasteLabels": ["Dán", "Paste"]    // cộng thêm nhãn, không thay danh sách mặc định
 }
 ```
 
 Trả về khi được:
 
 ```json
-{"value": {"strategy": "menu", "clipboard": true, "pasted": true, "verified": true}}
+{"value": {"strategy": "menu", "clipboard": false, "pasted": true, "verified": true}}
 ```
 
-**Hai đường dán**, `auto` thử theo thứ tự:
+`"clipboard": false` ở đây nghĩa là *lệnh này không ghi bảng dán* — đúng như thiết
+kế của `pasteOnly`, không phải báo hỏng.
 
-| strategy    | Cách làm                                        | Yêu cầu   | Tốc độ  |
-|-------------|-------------------------------------------------|-----------|---------|
-| `cmdv`      | `typeKey:@"v" modifierFlags:Command`             | iOS 17+   | nhanh   |
-| `menu`      | Nhấn giữ ô nhập → bấm mục "Dán" trong thực đơn   | iOS 15+   | ~1-2s   |
-| `clipboard` | Chỉ ghi bảng dán, không dán                      | —         | tức thì |
+#### `/wda/paste` — gộp hai nhịp vào một
+
+```
+POST /wda/paste
+{"value": "<chữ>", "strategy": "auto|cmdv|menu|clipboard", ...}
+```
+
+Chỉ dùng được khi WDA **đang ở tiền cảnh**. Trong luồng điều khiển bình thường
+thì nó trả `PASTE_CLIPBOARD_BLOCKED` — hãy dùng luồng ba nhịp ở trên.
+
+#### Hai đường dán
+
+| strategy | Cách làm | Yêu cầu | Tốc độ |
+|---|---|---|---|
+| `cmdv` | `typeKey:@"v" modifierFlags:Command` | **iOS 17+** | nhanh |
+| `menu` | Nhấn giữ ô nhập → bấm mục "Dán" trong thực đơn | iOS 15+ | ~1-2s |
+
+`auto` thử `cmdv` trước rồi mới tới `menu`. Máy dưới iOS 17 thì `cmdv` bị loại
+ngay, không tốn round-trip nào.
 
 Đường `menu` không làm iOS hỏi "Cho phép dán?": iOS coi cú bấm vào mục Dán là
 người dùng chủ động, khác với việc app tự đọc bảng dán bằng mã.
 
-`POST /wda/setClipboard {"value": "<chữ>"}` là đường `clipboard` tách riêng.
+> **Lưu ý về vị trí con trỏ.** Nhấn giữ đặt lại con trỏ vào chỗ ngón tay chạm —
+> giữa ô nhập. Ô trống thì không sao. Ô **đã có chữ** thì chữ dán vào sẽ chèn
+> giữa đoạn cũ chứ không nối vào cuối.
 
-**Mã lỗi** — bên gọi khớp theo tiền tố để biết có nên lùi về `/wda/keys` không:
+#### Mã lỗi
 
-| Mã                        | Nghĩa                                                      |
-|---------------------------|------------------------------------------------------------|
-| `PASTE_BAD_ARG`           | Tham số sai                                                |
-| `PASTE_CLIPBOARD_BLOCKED` | iOS không cho WDA ghi bảng dán lúc chạy nền                |
-| `PASTE_NO_FOCUS`          | Không ô nhập nào đang được chọn — bảng dán vẫn ĐÃ được ghi |
-| `PASTE_CMDV_FAILED`       | Máy dưới iOS 17, hoặc Command+V không ăn                   |
-| `PASTE_FAILED`            | Cả hai đường đều trượt — bảng dán vẫn ĐÃ được ghi          |
+Bên gọi khớp theo tiền tố để biết có nên lùi về `/wda/keys` không:
 
-> Endpoint **không** tự đưa WDA lên chạy trước rồi quay lại app để lách hạn chế
-> bảng dán. Làm vậy sẽ nháy màn hình người dùng giữa lúc điều khiển. Gặp
-> `PASTE_CLIPBOARD_BLOCKED` thì cứ gõ bằng `/wda/keys` như cũ.
+| Mã | Nghĩa |
+|---|---|
+| `PASTE_BAD_ARG` | Tham số sai |
+| `PASTE_CLIPBOARD_BLOCKED` | iOS không cho WDA ghi bảng dán lúc chạy nền |
+| `PASTE_NO_FOCUS` | Không ô nhập nào đang được chọn |
+| `PASTE_CMDV_FAILED` | Máy dưới iOS 17, hoặc Command+V không ăn |
+| `PASTE_FAILED` | Cả hai đường đều trượt |
+
+> Các endpoint **không** tự đưa WDA lên tiền cảnh rồi quay lại app hộ bên gọi.
+> Chuyển app là việc nhìn thấy được trên màn hình người dùng — bên máy tính mới
+> biết lúc nào làm là hợp lý.
 
 ## Bảo mật — Auth một lớp (source patch)
 

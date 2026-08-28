@@ -2,7 +2,7 @@
 # ============================================================
 # add_photo_commands.sh — Copy lệnh tuỳ biến của repo này vào WDA source
 # FBPhotoCommands: /wda/importPhoto, /wda/importVideo
-# FBPasteCommands: /wda/paste, /wda/setClipboard
+# FBPasteCommands: /wda/setClipboard, /wda/pasteOnly, /wda/paste
 # ============================================================
 
 WDA_DIR="WebDriverAgent"
@@ -56,6 +56,7 @@ echo "========================================"
 echo "✅ Custom commands ready for build"
 echo "   POST /wda/importPhoto  — import ảnh"
 echo "   POST /wda/importVideo  — import video"
-echo "   POST /wda/paste        — dán chữ qua bảng dán"
 echo "   POST /wda/setClipboard — chỉ ghi bảng dán"
+echo "   POST /wda/pasteOnly    — chỉ ra lệnh dán, không đụng bảng dán"
+echo "   POST /wda/paste        — gộp ghi + dán vào một lệnh"
 echo "========================================"

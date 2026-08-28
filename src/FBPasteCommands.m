@@ -2,12 +2,15 @@
  * FBPasteCommands — Dán chữ vào ô nhập bằng bảng dán của iOS
  * Custom command cho WebDriverAgent (DrakoCtrl)
  *
- * POST /wda/paste
- *   {"value": "<chữ>", "strategy": "auto|cmdv|menu|clipboard",
- *    "verify": true, "timeout": 3.0, "pasteLabels": ["Dán","Paste"]}
- *
  * POST /wda/setClipboard
  *   {"value": "<chữ>"}
+ *
+ * POST /wda/pasteOnly
+ *   {"strategy": "auto|cmdv|menu", "verify": true, "timeout": 3.0,
+ *    "pasteLabels": ["Dán","Paste"]}
+ *
+ * POST /wda/paste  — gộp hai lệnh trên vào một
+ *   {"value": "<chữ>", "strategy": "auto|cmdv|menu|clipboard", ...}
  *
  * ── Vì sao có file này ────────────────────────────────────────────────────
  * WDA gốc đã có /wda/setPasteboard, nhưng nó DỪNG ở chỗ ghi bảng dán: chữ nằm
@@ -24,10 +27,21 @@
  *    coi cú bấm này là NGƯỜI DÙNG chủ động dán nên KHÔNG hỏi "Cho phép dán?"
  *    như khi app tự đọc bảng dán bằng mã.
  *
+ * ── Vì sao có /wda/pasteOnly tách riêng ───────────────────────────────────
+ * Đo trên máy thật (iOS 15.8): iOS CHẶN ghi bảng dán khi WDA chạy nền. Mà
+ * trong luồng thật, đúng lúc cần dán thì WDA luôn đã về nền. Nên /wda/paste
+ * (gộp ghi + dán) chết ngay ở bước ghi, dù bảng dán đã có sẵn đúng nội dung.
+ *
+ * Luồng chạy được là ba nhịp, bên gọi tự lo hai nhịp đầu:
+ *   đưa WDA lên tiền cảnh → /wda/setClipboard → về app đích → /wda/pasteOnly
+ * Đo thực tế: 142ms + 43ms + 21ms = 206ms cho 350 ký tự, so với ~9.000ms nếu
+ * gõ từng ký tự qua /wda/keys. Bàn phím vẫn còn sau khi quay lại app đích.
+ *
  * ── Cái không làm ─────────────────────────────────────────────────────────
- * Không tự đưa WDA lên chạy trước rồi quay lại app. Nếu iOS chặn ghi bảng dán
- * lúc WDA chạy nền thì endpoint báo PASTE_CLIPBOARD_BLOCKED chứ không nháy màn
- * hình của người dùng — bên máy tính lùi về /wda/keys là xong.
+ * Không tự đưa WDA lên tiền cảnh rồi quay lại app hộ bên gọi. Chuyển app là
+ * việc nhìn thấy được trên màn hình người dùng, và bên máy tính mới biết lúc
+ * nào làm là hợp lý — làm lén trong một route thì nó nháy màn hình vào những
+ * lúc không ai ngờ.
  */
 
 #import "FBPasteCommands.h"
@@ -226,6 +240,15 @@ static BOOL FBPasteBangThucDon(XCUIApplication *app,
   }
 }
 
+#pragma mark - Đọc tham số
+
+/// Đọc 'strategy' từ thân yêu cầu, mặc định "auto".
+static NSString *FBPasteDocCach(FBRouteRequest *request)
+{
+  id tho = request.arguments[@"strategy"];
+  return [tho isKindOfClass:NSString.class] ? [(NSString *)tho lowercaseString] : @"auto";
+}
+
 #pragma mark -
 
 @implementation FBPasteCommands
@@ -235,6 +258,8 @@ static BOOL FBPasteBangThucDon(XCUIApplication *app,
   return @[
     [[FBRoute POST:@"/wda/paste"].withoutSession respondWithTarget:self action:@selector(handlePaste:)],
     [[FBRoute POST:@"/wda/paste"] respondWithTarget:self action:@selector(handlePaste:)],
+    [[FBRoute POST:@"/wda/pasteOnly"].withoutSession respondWithTarget:self action:@selector(handlePasteOnly:)],
+    [[FBRoute POST:@"/wda/pasteOnly"] respondWithTarget:self action:@selector(handlePasteOnly:)],
     [[FBRoute POST:@"/wda/setClipboard"].withoutSession respondWithTarget:self action:@selector(handleSetClipboard:)],
     [[FBRoute POST:@"/wda/setClipboard"] respondWithTarget:self action:@selector(handleSetClipboard:)],
   ];
@@ -256,6 +281,27 @@ static BOOL FBPasteBangThucDon(XCUIApplication *app,
   return FBResponseWithObject(@{@"clipboard": @YES});
 }
 
+#pragma mark - POST /wda/pasteOnly
+
+/**
+ * Chỉ ra lệnh dán, KHÔNG đụng vào bảng dán.
+ *
+ * Vì sao phải tách khỏi /wda/paste: đo trên máy thật (iOS 15.8) cho thấy iOS
+ * CHẶN ghi bảng dán khi WDA chạy nền. Nên luồng chạy được là ba nhịp, và bên
+ * gọi tự lo hai nhịp đầu:
+ *
+ *   đưa WDA lên tiền cảnh → /wda/setClipboard → về app đích → /wda/pasteOnly
+ *
+ * Ghép ghi-và-dán vào một lệnh như /wda/paste thì nhịp cuối chết ngay ở bước
+ * ghi, dù bảng dán ĐÃ có sẵn đúng nội dung từ nhịp giữa. Đó không phải lỗi của
+ * /wda/paste — nó vẫn đúng khi WDA đang ở tiền cảnh — mà là vì trong luồng
+ * thật, lúc cần dán thì WDA luôn đã về nền rồi.
+ */
++ (id<FBResponsePayload>)handlePasteOnly:(FBRouteRequest *)request
+{
+  return [self danVaoONhap:request daGhiBangDan:NO];
+}
+
 #pragma mark - POST /wda/paste
 
 + (id<FBResponsePayload>)handlePaste:(FBRouteRequest *)request
@@ -267,15 +313,38 @@ static BOOL FBPasteBangThucDon(XCUIApplication *app,
   }
   NSString *chu = (NSString *)tho;
 
-  NSString *cach = @"auto";
-  id thoCach = request.arguments[@"strategy"];
-  if ([thoCach isKindOfClass:NSString.class]) {
-    cach = [(NSString *)thoCach lowercaseString];
-  }
+  NSString *cach = FBPasteDocCach(request);
   if (!([cach isEqualToString:@"auto"] || [cach isEqualToString:@"cmdv"]
         || [cach isEqualToString:@"menu"] || [cach isEqualToString:@"clipboard"])) {
     return FBResponseWithUnknownErrorFormat(
       @"PASTE_BAD_ARG: 'strategy' phải là auto | cmdv | menu | clipboard, nhận '%@'", cach);
+  }
+
+  // Ghi bảng dán TRƯỚC mọi thứ khác. Hỏng ở đây thì hai đường dán bên dưới đều
+  // vô nghĩa — tệ hơn: chúng sẽ dán lại chữ CŨ còn sót trong bảng dán.
+  if (!FBPasteGhiBangDan(chu)) {
+    return FBResponseWithUnknownErrorFormat(
+      @"PASTE_CLIPBOARD_BLOCKED: iOS không cho ghi bảng dán (WDA đang chạy nền). "
+      @"Hãy đưa WDA lên tiền cảnh, gọi /wda/setClipboard, về app đích rồi gọi /wda/pasteOnly.");
+  }
+
+  if ([cach isEqualToString:@"clipboard"]) {
+    return FBResponseWithObject(@{@"strategy": @"clipboard", @"clipboard": @YES,
+                                  @"pasted": @NO, @"verified": @NO});
+  }
+
+  return [self danVaoONhap:request daGhiBangDan:YES];
+}
+
+#pragma mark - Phần dán dùng chung cho /wda/paste và /wda/pasteOnly
+
++ (id<FBResponsePayload>)danVaoONhap:(FBRouteRequest *)request daGhiBangDan:(BOOL)daGhi
+{
+  NSString *cach = FBPasteDocCach(request);
+  if (!([cach isEqualToString:@"auto"] || [cach isEqualToString:@"cmdv"]
+        || [cach isEqualToString:@"menu"])) {
+    return FBResponseWithUnknownErrorFormat(
+      @"PASTE_BAD_ARG: 'strategy' phải là auto | cmdv | menu, nhận '%@'", cach);
   }
 
   BOOL kiemLai = YES;
@@ -307,18 +376,6 @@ static BOOL FBPasteBangThucDon(XCUIApplication *app,
     }
   }
 
-  // Ghi bảng dán TRƯỚC mọi thứ khác. Hỏng ở đây thì hai đường dán bên dưới đều
-  // vô nghĩa — tệ hơn: chúng sẽ dán lại chữ CŨ còn sót trong bảng dán.
-  if (!FBPasteGhiBangDan(chu)) {
-    return FBResponseWithUnknownErrorFormat(
-      @"PASTE_CLIPBOARD_BLOCKED: iOS không cho ghi bảng dán (WDA đang chạy nền). Hãy gõ bằng /wda/keys.");
-  }
-
-  if ([cach isEqualToString:@"clipboard"]) {
-    return FBResponseWithObject(@{@"strategy": @"clipboard", @"clipboard": @YES,
-                                  @"pasted": @NO, @"verified": @NO});
-  }
-
   XCUIApplication *app = XCUIApplication.fb_activeApplication;
   BOOL thuCmdV = [cach isEqualToString:@"auto"] || [cach isEqualToString:@"cmdv"];
   BOOL thuThucDon = [cach isEqualToString:@"auto"] || [cach isEqualToString:@"menu"];
@@ -336,7 +393,7 @@ static BOOL FBPasteBangThucDon(XCUIApplication *app,
     }
     if (nil == oNhap || !oNhap.exists) {
       return FBResponseWithUnknownErrorFormat(
-        @"PASTE_NO_FOCUS: không ô nhập nào đang được chọn trên máy (bảng dán ĐÃ được ghi)");
+        @"PASTE_NO_FOCUS: không ô nhập nào đang được chọn trên máy");
     }
     if (kiemLai) {
       truoc = FBPasteDocGiaTri(oNhap);
@@ -348,7 +405,7 @@ static BOOL FBPasteBangThucDon(XCUIApplication *app,
   // Trả lời sau một cú dán mà ta không đọc lại được ô nhập. Không nói dối là đã
   // kiểm, nhưng cũng không coi là hỏng — cú dán vẫn có thể đã vào.
   id (^traLoi)(NSString *, BOOL) = ^id(NSString *duong, BOOL daKiem) {
-    return FBResponseWithObject(@{@"strategy": duong, @"clipboard": @YES,
+    return FBResponseWithObject(@{@"strategy": duong, @"clipboard": @(daGhi),
                                   @"pasted": @YES, @"verified": @(daKiem)});
   };
 
@@ -370,7 +427,7 @@ static BOOL FBPasteBangThucDon(XCUIApplication *app,
       [nhatKy addObject:[@"cmdv: " stringByAppendingString:(loi ?: @"hỏng")]];
     }
     if ([cach isEqualToString:@"cmdv"]) {
-      return FBResponseWithUnknownErrorFormat(@"PASTE_CMDV_FAILED: %@ (bảng dán ĐÃ được ghi)",
+      return FBResponseWithUnknownErrorFormat(@"PASTE_CMDV_FAILED: %@",
                                               [nhatKy componentsJoinedByString:@"; "]);
     }
   }
@@ -395,8 +452,7 @@ static BOOL FBPasteBangThucDon(XCUIApplication *app,
   }
 
   return FBResponseWithUnknownErrorFormat(
-    @"PASTE_FAILED: %@ (bảng dán ĐÃ được ghi — vẫn dán tay được trên máy)",
-    [nhatKy componentsJoinedByString:@"; "]);
+    @"PASTE_FAILED: %@", [nhatKy componentsJoinedByString:@"; "]);
 }
 
 @end
