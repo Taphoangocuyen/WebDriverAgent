@@ -25,7 +25,7 @@ if wda_lib_group
 end
 
 photo_group = commands_group || wda_lib_group || project.main_group
-puts "Adding FBPhotoCommands to group: #{photo_group.display_name}"
+puts "Adding custom command files to group: #{photo_group.display_name}"
 
 # ═══════════════════════════════════════════════════════
 # Helper: thêm file vào group + compile sources
@@ -48,18 +48,20 @@ def add_file_to_target(group, filename, target)
 end
 
 # ═══════════════════════════════════════════════════════
-# FBPhotoCommands (.h + .m) → Commands group
+# Lệnh tuỳ biến của repo này (.h + .m) → Commands group
+#   FBPhotoCommands — /wda/importPhoto, /wda/importVideo
+#   FBPasteCommands — /wda/paste, /wda/setClipboard
 # ═══════════════════════════════════════════════════════
+%w[FBPhotoCommands FBPasteCommands].each do |base|
+  # Header: chỉ cần nằm trong group, KHÔNG đưa vào compile sources
+  unless photo_group.files.find { |f| f.path == "#{base}.h" }
+    photo_group.new_file("#{base}.h")
+    puts "Added #{base}.h to group"
+  end
 
-# Header file (không cần add to compile sources)
-existing_h = photo_group.files.find { |f| f.path == 'FBPhotoCommands.h' }
-unless existing_h
-  photo_group.new_file('FBPhotoCommands.h')
-  puts "Added FBPhotoCommands.h to group"
+  # Implementation: phải compile
+  add_file_to_target(photo_group, "#{base}.m", lib_target)
 end
-
-# Implementation file (cần compile)
-add_file_to_target(photo_group, 'FBPhotoCommands.m', lib_target)
 
 
 # ════════════════════════════════════════
@@ -97,6 +99,19 @@ linked_now = lib_target.frameworks_build_phase.files.any? do |bf|
 end
 unless linked_now
   puts "ERROR: Photos.framework vẫn chưa nằm trong frameworks build phase của #{lib_target.name}"
+  exit 1
+end
+
+# Kiểm cả hai .m có THẬT trong compile sources không. Cùng lý do với đoạn kiểm
+# Photos.framework ở trên: hụt một file thì build vẫn xanh, IPA vẫn chạy, chỉ
+# thiếu mất route — và chỉ lòi ra ở bước verify sau ~15 phút chờ.
+%w[FBPhotoCommands.m FBPasteCommands.m].each do |m|
+  compiled = lib_target.source_build_phase.files.any? do |bf|
+    bf.file_ref && bf.file_ref.path.to_s.end_with?(m)
+  end
+  next if compiled
+
+  puts "ERROR: #{m} khong nam trong compile sources cua #{lib_target.name}"
   exit 1
 end
 

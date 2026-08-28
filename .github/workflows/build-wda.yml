@@ -91,11 +91,13 @@ jobs:
           bash scripts/customize_wda.sh
 
       # ════════════════════════════════════════════════════════
-      # Bước 1.5: Add FBPhotoCommands (importPhoto/importVideo)
+      # Bước 1.5: Add lệnh tuỳ biến của repo này
+      #   FBPhotoCommands — /wda/importPhoto, /wda/importVideo
+      #   FBPasteCommands — /wda/paste, /wda/setClipboard
       # ════════════════════════════════════════════════════════
-      - name: Add FBPhotoCommands to WDA
+      - name: Add custom commands to WDA
         run: |
-          echo "=== Adding FBPhotoCommands (importPhoto/importVideo) ==="
+          echo "=== Adding FBPhotoCommands + FBPasteCommands ==="
           COMMANDS_DIR="WebDriverAgent/WebDriverAgentLib/Commands"
 
           if [ ! -d "$COMMANDS_DIR" ]; then
@@ -105,9 +107,11 @@ jobs:
           fi
 
           # Copy source files
-          cp src/FBPhotoCommands.h "$COMMANDS_DIR/"
-          cp src/FBPhotoCommands.m "$COMMANDS_DIR/"
-          echo "  Copied FBPhotoCommands.h/.m → $COMMANDS_DIR/"
+          for BASE in FBPhotoCommands FBPasteCommands; do
+            cp "src/$BASE.h" "$COMMANDS_DIR/"
+            cp "src/$BASE.m" "$COMMANDS_DIR/"
+            echo "  Copied $BASE.h/.m → $COMMANDS_DIR/"
+          done
 
           # Photos.framework duoc link trong scripts/add_to_xcode.rb (gem xcodeproj,
           # target WebDriverAgentLib tuong minh). Truoc day co scripts/link_photos_framework.py
@@ -119,8 +123,8 @@ jobs:
 
           # Verify
           echo "=== Verify files ==="
-          ls -la "$COMMANDS_DIR/FBPhotoCommands"*
-          echo "  ✅ FBPhotoCommands ready"
+          ls -la "$COMMANDS_DIR/FBPhotoCommands"* "$COMMANDS_DIR/FBPasteCommands"*
+          echo "  ✅ Custom commands ready"
 
       # ════════════════════════════════════════════════════════
       # Bước 2: Setup auth config (validate key, set env vars)
@@ -601,8 +605,8 @@ jobs:
           # ─── 4. Ma tuy bien cua repo NAY (khong co trong appium goc) ───
           # 2026-08-25: mot ban IPA build tu nham repo builder da di qua buoc verify cu
           # va ra mau xanh, du thieu ca hai route duoi day. Do la ly do co muc kiem nay.
-          for R in importPhoto importVideo; do
-            if has "$LIB" "$R"; then ok "Co route /wda/$R"
+          for R in importPhoto importVideo paste setClipboard; do
+            if has "$LIB" "/wda/$R"; then ok "Co route /wda/$R"
             else bad "THIEU route /wda/$R — build tu nham nguon?"; fi
           done
 
