@@ -41,8 +41,9 @@ sẽ không gọi được WDA.
 1. Repo → Tab **Actions** → **Build DrakoCtrl WDA for TrollStore**
 2. **Run workflow** → tuỳ chỉnh:
    - `bundle_id`: Bundle ID (mặc định: `com.facebook.WebDriverAgentRunner`)
-   - `display_name`: Tên hiển thị (mặc định: `DrakoCtrl`)
-   - `ipa_filename`: Tên file IPA xuất ra (mặc định: `DrakoCtrl`)
+   - `display_name`: Tên hiển thị dưới icon trên iPhone (mặc định: `DRAKO`)
+   - `ipa_filename`: Tên file IPA xuất ra (mặc định: `DrakoCtrl`). **Giữ nguyên** —
+     app desktop tìm file theo đúng tên `DrakoCtrl.ipa` trong thư mục tài nguyên
    - `auth_key`: để trống thì lấy secret `IPC_AUTH_KEY`
    - `min_ios_version`: iOS tối thiểu (mặc định: `15.0`)
    - `wda_version`: **giữ nguyên `v11.4.0`**. Để trống sẽ lấy bản mới nhất

@@ -8,9 +8,12 @@ on:
         required: false
         default: 'com.facebook.WebDriverAgentRunner'
       display_name:
+        # Ten hien thi duoi icon tren iPhone. KHAC ipa_filename ben duoi:
+        # ipa_filename phai giu 'DrakoCtrl' vi app desktop tim file theo ten do
+        # (wda_installer.rs, build_security.rs, device_file.rs deu ghim cung).
         description: 'App display name'
         required: false
-        default: 'DrakoCtrl'
+        default: 'DRAKO'
       ipa_filename:
         description: 'Output IPA filename (without .ipa)'
         required: false
