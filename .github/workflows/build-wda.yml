@@ -241,6 +241,13 @@ jobs:
 
           # ══════════════════════════════════════
           # Custom App Icon (resize, giữ gốc cho TrollStore)
+          #
+          # resources/icon.png phải KHÔNG có kênh alpha. iOS không trộn alpha
+          # cho icon màn hình chính — chỗ trong suốt thành ĐEN. Icon DRAKO gốc
+          # là hình tròn trên nền trong suốt, tức 22% diện tích (bốn góc) sẽ
+          # thành khối đen. Bản trong repo đã được trải lên nền #000514 (màu bên
+          # trong vòng tròn) từ trước. Thay icon mới thì trải nền trước, đừng
+          # commit thẳng file có alpha.
           # ══════════════════════════════════════
           if [ -f "resources/icon.png" ]; then
             echo "=== Setting custom app icon ==="
