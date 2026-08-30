@@ -615,7 +615,7 @@ jobs:
           # ─── 4. Ma tuy bien cua repo NAY (khong co trong appium goc) ───
           # 2026-08-25: mot ban IPA build tu nham repo builder da di qua buoc verify cu
           # va ra mau xanh, du thieu ca hai route duoi day. Do la ly do co muc kiem nay.
-          for R in importPhoto importVideo paste pasteOnly setClipboard; do
+          for R in importPhoto importVideo paste pasteOnly setClipboard selectAll copy; do
             if has "$LIB" "/wda/$R"; then ok "Co route /wda/$R"
             else bad "THIEU route /wda/$R — build tu nham nguon?"; fi
           done

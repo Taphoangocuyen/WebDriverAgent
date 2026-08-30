@@ -166,6 +166,50 @@ người dùng chủ động, khác với việc app tự đọc bảng dán b�
 > giữa ô nhập. Ô trống thì không sao. Ô **đã có chữ** thì chữ dán vào sẽ chèn
 > giữa đoạn cũ chứ không nối vào cuối.
 
+#### Chọn hết và sao chép
+
+```
+POST /wda/selectAll
+{"timeout": 3.0, "selectAllLabels": ["Chọn tất cả", "Select All"]}
+
+POST /wda/copy
+{"selectAll": true, "timeout": 3.0,
+ "copyLabels": [...], "selectAllLabels": [...]}
+```
+
+`/wda/copy` **chỉ sao chép, không đọc về**. Muốn lấy chữ về máy tính thì vẫn
+phải đưa WDA lên tiền cảnh rồi gọi `/wda/getPasteboard` (route sẵn có của WDA
+gốc) — cùng bức tường của `setClipboard` nhưng ở chiều ngược lại.
+
+Kết quả của `/wda/copy`:
+
+```json
+{"value": {"copied": true, "selectedAll": true,
+           "clipboardChanged": true, "value": "chữ trong ô"}}
+```
+
+- `value` là giá trị **ô nhập** đọc được lúc sao chép, KHÔNG phải nội dung bảng
+  dán. Thường trùng nhau khi `selectAll: true`, nhưng đừng coi là bằng chứng.
+- `clipboardChanged` chỉ là dấu hiệu tham khảo: cùng lý do iOS chặn *ghi* bảng
+  dán lúc chạy nền, `changeCount` cũng có thể đọc ra số cũ.
+
+`selectAll` cũng dùng được như một tuỳ chọn của `/wda/pasteOnly` và `/wda/paste`
+để **dán đè** thay vì chèn vào giữa:
+
+```
+POST /wda/pasteOnly   {"selectAll": true}
+```
+
+Mặc định `false` — nó xoá chữ sẵn có trong ô, mà bên gọi mới biết ô đó có đáng
+xoá hay không.
+
+#### Hai route KHÔNG thêm
+
+Panda Helper (một bản WDA đóng gói lại) có `/wda/pushPasteboard` và
+`/wda/pullPasteboard`. Repo này không thêm vì đã có sẵn hai đường làm đúng việc
+đó: `/wda/setPasteboard` + `/wda/getPasteboard` của WDA gốc, và
+`/wda/setClipboard` ở trên. Thêm nữa chỉ tạo ra ba cách làm một việc.
+
 #### Mã lỗi
 
 Bên gọi khớp theo tiền tố để biết có nên lùi về `/wda/keys` không:
